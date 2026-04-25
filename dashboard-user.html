@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Dashboard | Virtual Lab</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <div class="container-fluid">
+        <div class="row g-3">
+          <aside class="col-lg-3 col-xl-2">
+            <div class="sidebar p-3">
+              <h2 class="h5 mb-4">User Panel</h2>
+              <nav class="nav flex-column">
+                <a class="nav-link active" href="dashboard-user.html"><i class="bi bi-house me-2"></i>Dashboard</a>
+                <a class="nav-link" href="#profile-panel"><i class="bi bi-person me-2"></i>Profile</a>
+                <a class="nav-link" href="#booking-panel"><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
+                <a class="nav-link" href="#session-panel"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
+                <a class="nav-link" href="#grants-panel"><i class="bi bi-cash-coin me-2"></i>Grants</a>
+                <a class="nav-link" href="login.html"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
+              </nav>
+            </div>
+          </aside>
+
+          <section class="col-lg-9 col-xl-10">
+            <div class="topbar p-3 mb-3 d-flex justify-content-between align-items-center">
+              <div>
+                <h1 class="h4 mb-1">Researcher Dashboard</h1>
+                <small class="text-secondary">Welcome back, Dr. Sarah</small>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="toggleSession" />
+                <label class="form-check-label" for="toggleSession">Simulate ongoing session</label>
+              </div>
+            </div>
+
+            <div class="row g-3">
+              <div id="profile-panel" class="col-12">
+                <div class="card-soft p-3">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h2 class="panel-title mb-0">Profile Panel</h2>
+                    <a href="profile.html" class="btn btn-outline-primary btn-outline-soft btn-sm">Open Full Profile</a>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-md-3"><span class="muted-label">Full Name:</span><div>Dr. Sarah Ahmed</div></div>
+                    <div class="col-md-3"><span class="muted-label">Phone:</span><div>+20 100 000 0000</div></div>
+                    <div class="col-md-3"><span class="muted-label">Role:</span><div>Researcher</div></div>
+                    <div class="col-md-3"><span class="muted-label">User ID:</span><div>U-1024</div></div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="booking-panel" class="col-12">
+                <div class="card-soft p-3">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="panel-title mb-0">Booking Panel</h2>
+                    <button class="btn btn-gradient btn-sm px-3" data-bs-toggle="modal" data-bs-target="#bookingModal">Book Equipment</button>
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-striped mb-0">
+                      <thead>
+                        <tr>
+                          <th>Booking ID</th>
+                          <th>Equipment</th>
+                          <th>Date</th>
+                          <th>Start Time</th>
+                          <th>End Time</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>B-501</td>
+                          <td>Electron Microscope</td>
+                          <td>2026-04-26</td>
+                          <td>09:00</td>
+                          <td>11:00</td>
+                          <td><span class="badge text-bg-success">ongoing</span></td>
+                        </tr>
+                        <tr>
+                          <td>B-615</td>
+                          <td>Spectrometer</td>
+                          <td>2026-04-28</td>
+                          <td>10:00</td>
+                          <td>12:00</td>
+                          <td><span class="badge text-bg-primary">ready</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div id="session-panel" class="col-12 col-xl-6">
+                <div id="noSessionPanel" class="card-soft p-3 h-100">
+                  <h2 class="panel-title">Session Panel</h2>
+                  <p class="text-secondary mb-0">No ongoing session currently</p>
+                </div>
+                <div id="sessionPanel" class="card-soft p-3 h-100 d-none">
+                  <h2 class="panel-title">Active Session</h2>
+                  <p class="mb-1"><span class="muted-label">Equipment:</span> Electron Microscope</p>
+                  <p class="mb-1"><span class="muted-label">Remaining Time:</span> 01:15:20</p>
+                  <p class="mb-1"><span class="muted-label">Status:</span> <span class="status-badge bg-success-subtle text-success">Ongoing</span></p>
+                  <p class="mb-1"><span class="muted-label">Start:</span> 09:00 AM</p>
+                  <p class="mb-0"><span class="muted-label">End:</span> 11:00 AM</p>
+                </div>
+              </div>
+
+              <div id="grants-panel" class="col-12 col-xl-6">
+                <div class="card-soft p-3 h-100">
+                  <h2 class="panel-title mb-3">My Grants</h2>
+                  <div class="mb-2 p-2 border rounded-3">
+                    <div class="fw-semibold">Nano Research 2026</div>
+                    <div class="small text-secondary">Balance: $4,500</div>
+                    <div class="small text-secondary">Expiry: 2026-12-31</div>
+                  </div>
+                  <div class="p-2 border rounded-3">
+                    <div class="fw-semibold">Imaging Development Fund</div>
+                    <div class="small text-secondary">Balance: $2,100</div>
+                    <div class="small text-secondary">Expiry: 2026-09-30</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="bookingModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title fs-5">Book Equipment</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Equipment</label>
+                <select class="form-select">
+                  <option>Electron Microscope</option>
+                  <option>Spectrometer</option>
+                  <option>Centrifuge X2</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Booking Date</label>
+                <input type="date" class="form-control" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Required Qualification</label>
+                <input type="text" class="form-control" placeholder="Microscopy Certificate" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Start Time</label>
+                <input type="time" class="form-control" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">End Time</label>
+                <input type="time" class="form-control" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary btn-outline-soft" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-gradient">Confirm Booking</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

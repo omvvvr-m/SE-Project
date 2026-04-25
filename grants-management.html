@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grants Management | Virtual Lab</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <div class="container-fluid">
+        <div class="topbar p-3 mb-3 d-flex justify-content-between align-items-center">
+          <h1 class="h4 mb-0">Grants Management Panel</h1>
+          <div class="d-flex gap-2">
+            <button class="btn btn-gradient" data-bs-toggle="modal" data-bs-target="#grantModal">
+              <i class="bi bi-plus-lg me-1"></i>New Grant
+            </button>
+            <a href="dashboard-admin.html" data-back-dashboard class="btn btn-outline-primary btn-outline-soft">Back</a>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <div class="table-responsive">
+            <table class="table table-striped align-middle">
+              <thead>
+                <tr>
+                  <th>grantID</th>
+                  <th>userID</th>
+                  <th>balance</th>
+                  <th>expiryDate</th>
+                  <th>name</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>G-100</td>
+                  <td>U-1001</td>
+                  <td>$4,500</td>
+                  <td>2026-12-31</td>
+                  <td>Nano Research 2026</td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-primary btn-outline-soft" data-bs-toggle="modal" data-bs-target="#grantModal">Edit</button>
+                    <button class="btn btn-sm btn-outline-danger btn-outline-soft">Delete</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td>G-220</td>
+                  <td>U-1003</td>
+                  <td>$3,150</td>
+                  <td>2026-08-10</td>
+                  <td>Biotech Acceleration</td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-primary btn-outline-soft" data-bs-toggle="modal" data-bs-target="#grantModal">Edit</button>
+                    <button class="btn btn-sm btn-outline-danger btn-outline-soft">Delete</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="grantModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title fs-5">Add / Edit Grant</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-6"><input class="form-control" placeholder="grantID" /></div>
+              <div class="col-6"><input class="form-control" placeholder="userID" /></div>
+              <div class="col-6"><input class="form-control" placeholder="Balance" /></div>
+              <div class="col-6"><input class="form-control" type="date" /></div>
+              <div class="col-12"><input class="form-control" placeholder="Grant name" /></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary btn-outline-soft" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-gradient">Save Grant</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
