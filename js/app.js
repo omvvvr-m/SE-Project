@@ -37,14 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
   applyRoleAwareBackLinks();
 });
 
-function handleDashboardUpdate() {
-  const user = JSON.parse(localStorage.getItem("vlms_user"));
 
-  if (user && user.fullName) {
-    document.getElementById("welcomeText").textContent =
-      "Welcome back, " + user.fullName;
-  }
-}
 
 function handleRoleBasedLogin() {
   const loginForm = document.getElementById("loginForm");
@@ -82,12 +75,12 @@ function handleRoleBasedLogin() {
 
           if (role === "admin") {
             window.location.href = "dashboard-admin.html";
-            handleDashboardUpdate()
+            // handleDashboardUpdate()
             return;
           }
 
           window.location.href = "dashboard-user.html";
-          handleDashboardUpdate()
+          // handleDashboardUpdate()
         }
         else {
           alert("Incorrect username or password!");
@@ -118,8 +111,37 @@ function handleSignupValidation() {
       return;
     }
 
-    alert("Registration successful. You can now log in.");
-    window.location.href = "login.html";
+    const username = document.getElementById("username");
+    const firstName = document.getElementById("firstName");
+    const lastName = document.getElementById("lastName");
+    const phoneNumber = document.getElementById("phoneNumber");
+
+
+    fetch("api/register.php", {
+
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body:
+        "username=" + encodeURIComponent(username.value)
+        + "&password=" + encodeURIComponent(password)
+        + "&firstName=" + encodeURIComponent(firstName.value)
+        + "&lastName=" + encodeURIComponent(lastName.value)
+        + "&phoneNumber=" + encodeURIComponent(phoneNumber.value)
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === "success") {
+          alert("Registration successful. You can now log in.");
+          window.location.href = "login.html";
+        }
+        else {
+          alert("Something went wrong!");
+          return;
+        }
+
+      });
   });
 }
 
