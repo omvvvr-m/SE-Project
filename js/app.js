@@ -1,4 +1,35 @@
 document.addEventListener("DOMContentLoaded", () => {
+
+  const user = JSON.parse(localStorage.getItem("vlms_user"));
+
+
+
+  function setValue(el, value) {
+    if ("value" in el) {
+      el.value = value;       // for input, textarea, select
+    } else {
+      el.textContent = value; // for span, div, label, etc.
+    }
+  }
+
+  if (user && user.fullName) {
+    document.querySelectorAll(".fullName").forEach(el => {
+      setValue(el, user.fullName);
+    });
+
+    document.querySelectorAll(".userID").forEach(el => {
+      setValue(el, user.id);
+    });
+
+    document.querySelectorAll(".phoneNumber").forEach(el => {
+      setValue(el, user.phone);
+    });
+
+    document.querySelectorAll(".role").forEach(el => {
+      setValue(el, user.role);
+    });
+  }
+
   handleRoleBasedLogin();
   handleSignupValidation();
   handleSessionPanelVisibility();
@@ -6,30 +37,64 @@ document.addEventListener("DOMContentLoaded", () => {
   applyRoleAwareBackLinks();
 });
 
+function handleDashboardUpdate() {
+  const user = JSON.parse(localStorage.getItem("vlms_user"));
+
+  if (user && user.fullName) {
+    document.getElementById("welcomeText").textContent =
+      "Welcome back, " + user.fullName;
+  }
+}
+
 function handleRoleBasedLogin() {
   const loginForm = document.getElementById("loginForm");
   if (!loginForm) return;
 
   loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const role = document.getElementById("loginRole")?.value;
-    localStorage.setItem("vlms_role", role || "researcher");
-    localStorage.setItem(
-      "vlms_user",
-      JSON.stringify({
-        id: "U-1024",
-        fullName: "Dr. Sarah Ahmed",
-        phone: "+20 100 000 0000",
-        role: role === "admin" ? "Admin" : "Researcher",
-      })
-    );
+    const username = document.getElementById("username");
+    const password = document.getElementById("password");
 
-    if (role === "admin") {
-      window.location.href = "dashboard-admin.html";
-      return;
-    }
 
-    window.location.href = "dashboard-user.html";
+    fetch("api/login.php", {
+
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body:
+        "username=" + encodeURIComponent(username.value) + "&password=" + encodeURIComponent(password.value)
+    })
+      .then(r => r.json())
+      .then(d => {
+        const role = d.role;
+        if (d.status === "success") {
+          alert("Logged in!");
+          localStorage.setItem(
+            "vlms_user",
+            JSON.stringify({
+              id: d.id,
+              fullName: d.fullName,
+              phone: d.phone,
+              role: role
+            })
+          );
+
+          if (role === "admin") {
+            window.location.href = "dashboard-admin.html";
+            handleDashboardUpdate()
+            return;
+          }
+
+          window.location.href = "dashboard-user.html";
+          handleDashboardUpdate()
+        }
+        else {
+          alert("Incorrect username or password!");
+        }
+
+      });
+
   });
 }
 
