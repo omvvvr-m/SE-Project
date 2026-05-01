@@ -1,0 +1,144 @@
+<?php
+
+require_once __DIR__ . "/../config/db.php";
+$grantModel = new Grant($conn);
+
+if (isset($_GET["delete_id"])) {
+    $grantModel->removeGrant($_GET["delete_id"]);
+    header("Location: ../grants-management.php");
+    exit();
+}
+
+if (
+    isset($_POST["user_id"]) &&
+    isset($_POST["balance"]) &&
+    isset($_POST["expiry_date"]) &&
+    isset($_POST["grant_name"])
+) {
+    $userID = (int)$_POST["user_id"];
+    $balance = (float)$_POST["balance"];
+    $expiryDate = trim($_POST["expiry_date"]);
+    $grantName = trim($_POST["grant_name"]);
+
+    if ($userID <= 0) {
+        header("Location: grants-management.php?error=" . urlencode("User ID must be a valid number."));
+        exit();
+    }
+
+    if (!$grantModel->isValidDate($expiryDate)) {
+        header("Location: grants-management.php?error=" . urlencode("Expiry date format is invalid."));
+        exit();
+    }
+
+    if (!$grantModel->userExists($userID)) {
+        header("Location: grants-management.php?error=" . urlencode("User ID does not exist in users table."));
+        exit();
+    }
+
+    try {
+        if (isset($_POST["grant_id"]) && $_POST["grant_id"] !== "") {
+            $grantModel->updateGrant((int)$_POST["grant_id"], $userID, $balance, $expiryDate, $grantName);
+        } else {
+            $grantModel->addGrant($userID, $balance, $expiryDate, $grantName);
+        }
+    } catch (mysqli_sql_exception $e) {
+        header("Location: grants-management.php?error=" . urlencode("Database error: " . $e->getMessage()));
+        exit();
+    }
+
+    header("Location: grants-management.php?success=1");
+    exit();
+}
+
+class Grant
+{
+    private $conn;
+
+    public function __construct($db)
+    {
+        $this->conn = $db;
+        $this->ensureTableExists();
+    }
+
+    public function getAll()
+    {
+        $this->ensureTableExists();
+        $sql = "SELECT
+                grantID AS grantID,
+                userID AS userID,
+                balance AS balance,
+                expiryDate AS expiryDate,
+                name AS name
+                FROM grants
+                ORDER BY grantID DESC";
+        return $this->conn->query($sql);
+    }
+
+    public function addGrant($userID, $balance, $expiryDate, $grantName)
+    {
+        $this->ensureTableExists();
+        $newGrantID = $this->getNextGrantID();
+        $sql = "INSERT INTO grants (grantID, userID, balance, expiryDate, name)
+                VALUES ('$newGrantID', '$userID', '$balance', '$expiryDate', '$grantName')";
+        return $this->conn->query($sql);
+    }
+
+    public function removeGrant($grantID)
+    {
+        $this->ensureTableExists();
+        $sql = "DELETE FROM grants WHERE grantID = '$grantID'";
+        return $this->conn->query($sql);
+    }
+
+    public function updateGrant($grantID, $userID, $balance, $expiryDate, $grantName)
+    {
+        $this->ensureTableExists();
+        $sql = "UPDATE grants SET
+                userID = '$userID',
+                balance = '$balance',
+                expiryDate = '$expiryDate',
+                name = '$grantName'
+                WHERE grantID = '$grantID'";
+        return $this->conn->query($sql);
+    }
+
+    public function userExists($userID)
+    {
+        $sql = "SELECT userID FROM users WHERE userID = '$userID' LIMIT 1";
+        $result = $this->conn->query($sql);
+        return $result && $result->num_rows > 0;
+    }
+
+    public function isValidDate($date)
+    {
+        $check = DateTime::createFromFormat("Y-m-d", $date);
+        return $check && $check->format("Y-m-d") === $date;
+    }
+
+    private function getNextGrantID()
+    {
+        $this->ensureTableExists();
+        $sql = "SELECT MAX(grantID) AS maxID FROM grants";
+        $result = $this->conn->query($sql);
+
+        if ($result && $row = $result->fetch_assoc()) {
+            return ((int)$row["maxID"]) + 1;
+        }
+
+        return 1;
+    }
+
+    private function ensureTableExists()
+    {
+        $sql = "CREATE TABLE IF NOT EXISTS grants (
+                grantID int(11) NOT NULL,
+                userID int(11) NOT NULL,
+                balance decimal(10,2) NOT NULL DEFAULT 0.00,
+                expiryDate date NOT NULL,
+                name varchar(100) NOT NULL,
+                PRIMARY KEY (grantID)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+        $this->conn->query($sql);
+    }
+}

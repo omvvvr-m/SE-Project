@@ -1,5 +1,10 @@
 <?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 include("../config/db.php");
+header("Content-Type: application/json");
 
 
 $username = $_POST['username'];
@@ -11,6 +16,9 @@ $res = $conn->query($SQL);
 
 if ($res->num_rows > 0) {
     $user = $res->fetch_assoc();
+    $_SESSION["vlms_user_id"] = (int)$user["userID"];
+    $_SESSION["vlms_role"] = $user["role"];
+
     echo json_encode([
 
         "status" => "success",
