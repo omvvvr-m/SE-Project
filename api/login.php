@@ -11,6 +11,8 @@ $res = $conn->query($SQL);
 
 if ($res->num_rows > 0) {
     $user = $res->fetch_assoc();
+    session_start();
+    $_SESSION["user_id"] = $user["userID"];
     echo json_encode([
 
         "status" => "success",

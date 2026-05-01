@@ -36,7 +36,6 @@ if (
 
 class Equipment
 {
-
     private $conn;
     public function __construct($db)
     {
