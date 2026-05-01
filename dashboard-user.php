@@ -1,3 +1,25 @@
+
+<?php 
+
+session_start();
+
+if (!isset($_SESSION["user_id"])) {
+    header("Location: login.html");
+    exit;
+}
+
+$currentUserId = $_SESSION["user_id"];
+
+require_once "config/db.php";
+require_once "models/equipment.php";
+require_once "models/reservation.php";
+
+$reservation = new Reservation($conn);
+$equipment = new Equipment($conn);
+
+$result = $equipment->getAll();
+?>
+
 <!doctype html>
 <html lang="en">
 
@@ -149,6 +171,7 @@
 
   <div class="modal fade" id="bookingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
+      <form id="bookingForm">
       <div class="modal-content">
         <div class="modal-header">
           <h2 class="modal-title fs-5">Book Equipment</h2>
@@ -158,35 +181,37 @@
           <div class="row g-3">
             <div class="col-12">
               <label class="form-label">Equipment</label>
-              <select class="form-select">
-                <option>Electron Microscope</option>
-                <option>Spectrometer</option>
-                <option>Centrifuge X2</option>
+              
+              <select name="eqID" class="form-select">
+              <?php while ($row = $result->fetch_assoc()) { ?>
+                <option><?php echo $row['eqID'] . " - " . $row['eqName']  ?></option>
+                <?php } ?>
               </select>
             </div>
             <div class="col-6">
               <label class="form-label">Booking Date</label>
-              <input type="date" class="form-control" />
+              <input name = "resDate" type="date" class="form-control" />
             </div>
             <div class="col-6">
               <label class="form-label">Required Qualification</label>
-              <input type="text" class="form-control" placeholder="Microscopy Certificate" />
+              <input name="qual" type="text" class="form-control" placeholder="Microscopy Certificate" />
             </div>
             <div class="col-6">
               <label class="form-label">Start Time</label>
-              <input type="time" class="form-control" id="bookingStartTime" />
+              <input type="time" name="startTime" class="form-control" id="bookingStartTime" />
             </div>
             <div class="col-6">
               <label class="form-label">End Time</label>
-              <input type="time" class="form-control" id="bookingEndTime" />
+              <input type="time" name = "endTime" class="form-control" id="bookingEndTime" />
             </div>
           </div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline-secondary btn-outline-soft" data-bs-dismiss="modal">Cancel</button>
-          <button class="btn btn-gradient" id="confirmBookingBtn">Confirm Booking</button>
+          <button type="submit" class="btn btn-gradient" id="confirmBookingBtn">Confirm Booking</button>
+          </div>
         </div>
-      </div>
+      </form>
     </div>
   </div>
 
