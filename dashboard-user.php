@@ -1,14 +1,14 @@
-
-<?php 
+<?php
 
 session_start();
 
 if (!isset($_SESSION["user_id"])) {
-    header("Location: login.html");
-    exit;
+  header("Location: login.html");
+  exit;
 }
 
 $currentUserId = $_SESSION["user_id"];
+
 
 require_once "config/db.php";
 require_once "models/equipment.php";
@@ -47,11 +47,11 @@ $result = $equipment->getAll();
           <div class="sidebar p-3">
             <h2 class="h5 mb-4">User Panel</h2>
             <nav class="nav flex-column">
-              <a class="nav-link active" href="dashboard-user.html"><i class="bi bi-house me-2"></i>Dashboard</a>
-              <a class="nav-link" href="profile.php?from=user" data-profile-link><i class="bi bi-person me-2"></i>Profile</a>
+              <a class="nav-link active" href="dashboard-user.php"><i class="bi bi-house me-2"></i>Dashboard</a>
+              <a class="nav-link" href="#profile-panel"><i class="bi bi-person me-2"></i>Profile</a>
               <a class="nav-link" href="#booking-panel"><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
               <a class="nav-link" href="#session-panel"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
-              <a class="nav-link" href="my-grants.php"><i class="bi bi-cash-coin me-2"></i>Grants Panel</a>
+              <a class="nav-link" href="#grants-panel"><i class="bi bi-cash-coin me-2"></i>Grants</a>
               <a class="nav-link" href="login.html"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
             </nav>
           </div>
@@ -74,20 +74,20 @@ $result = $equipment->getAll();
               <div class="card-soft p-3">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <h2 class="panel-title mb-0">Profile Panel</h2>
-                  <a href="profile.php?from=user" data-profile-link class="btn btn-outline-primary btn-outline-soft btn-sm">Open Full Profile</a>
+                  <a href="profile.html" class="btn btn-outline-primary btn-outline-soft btn-sm">Open Full Profile</a>
                 </div>
                 <div class="row g-2">
                   <div class="col-md-3"><span class="muted-label">Full Name:</span>
-                    <div id="fullName" class="fullName">Loading...</div>
+                    <div id="fullName" class="fullName">Dr. Sarah Ahmed</div>
                   </div>
                   <div class="col-md-3"><span class="muted-label">Phone:</span>
-                    <div class="phoneNumber">Loading...</div>
+                    <div class="phoneNumber">+20 100 000 0000</div>
                   </div>
                   <div class="col-md-3"><span class="muted-label">Role:</span>
-                    <div class="role">Loading...</div>
+                    <div class="role">Researcher</div>
                   </div>
                   <div class="col-md-3"><span class="muted-label">User ID:</span>
-                    <div class="userID">Loading...</div>
+                    <div class="userID">U-1024</div>
                   </div>
                 </div>
               </div>
@@ -153,16 +153,19 @@ $result = $equipment->getAll();
 
             <div id="grants-panel" class="col-12 col-xl-6">
               <div class="card-soft p-3 h-100">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h2 class="panel-title mb-0">My Grants</h2>
-                  <a href="my-grants.php" class="btn btn-outline-primary btn-outline-soft btn-sm">Open Grants Page</a>
+                <h2 class="panel-title mb-3">My Grants</h2>
+                <div class="mb-2 p-2 border rounded-3">
+                  <div class="fw-semibold">Nano Research 2026</div>
+                  <div class="small text-secondary">Balance: $4,500</div>
+                  <div class="small text-secondary">Expiry: 2026-12-31</div>
                 </div>
-                <div id="myGrantsList">
-                  <div class="small text-secondary">Loading grants...</div>
+                <div class="p-2 border rounded-3">
+                  <div class="fw-semibold">Imaging Development Fund</div>
+                  <div class="small text-secondary">Balance: $2,100</div>
+                  <div class="small text-secondary">Expiry: 2026-09-30</div>
                 </div>
               </div>
             </div>
-
           </div>
         </section>
       </div>
@@ -172,43 +175,43 @@ $result = $equipment->getAll();
   <div class="modal fade" id="bookingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
       <form id="bookingForm">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title fs-5">Book Equipment</h2>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="row g-3">
-            <div class="col-12">
-              <label class="form-label">Equipment</label>
-              
-              <select name="eqID" class="form-select">
-              <?php while ($row = $result->fetch_assoc()) { ?>
-                <option><?php echo $row['eqID'] . " - " . $row['eqName']  ?></option>
-                <?php } ?>
-              </select>
-            </div>
-            <div class="col-6">
-              <label class="form-label">Booking Date</label>
-              <input name = "resDate" type="date" class="form-control" />
-            </div>
-            <div class="col-6">
-              <label class="form-label">Required Qualification</label>
-              <input name="qual" type="text" class="form-control" placeholder="Microscopy Certificate" />
-            </div>
-            <div class="col-6">
-              <label class="form-label">Start Time</label>
-              <input type="time" name="startTime" class="form-control" id="bookingStartTime" />
-            </div>
-            <div class="col-6">
-              <label class="form-label">End Time</label>
-              <input type="time" name = "endTime" class="form-control" id="bookingEndTime" />
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title fs-5">Book Equipment</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Equipment</label>
+
+                <select name="eqID" class="form-select">
+                  <?php while ($row = $result->fetch_assoc()) { ?>
+                    <option><?php echo $row['eqID'] . " - " . $row['eqName']  ?></option>
+                  <?php } ?>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Booking Date</label>
+                <input name="resDate" type="date" class="form-control" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Required Qualification</label>
+                <input name="qual" type="text" class="form-control" placeholder="Microscopy Certificate" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Start Time</label>
+                <input type="time" name="startTime" class="form-control" id="bookingStartTime" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">End Time</label>
+                <input type="time" name="endTime" class="form-control" id="bookingEndTime" />
+              </div>
             </div>
           </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline-secondary btn-outline-soft" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-gradient" id="confirmBookingBtn">Confirm Booking</button>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary btn-outline-soft" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-gradient" id="confirmBookingBtn">Confirm Booking</button>
           </div>
         </div>
       </form>
@@ -216,7 +219,6 @@ $result = $equipment->getAll();
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/app.js?v=20260501-1026"></script>
   <script>
     const bookingStartTime = document.getElementById("bookingStartTime");
     const bookingEndTime = document.getElementById("bookingEndTime");

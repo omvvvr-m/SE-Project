@@ -88,6 +88,7 @@ class User
         }
 
         return 1;
+    }
     public function getUserData()
     {
         return $this->conn->query("SELECT * FROM users WHERE userID = " . (int)$_SESSION['user_id']);

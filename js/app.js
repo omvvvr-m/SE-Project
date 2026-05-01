@@ -107,7 +107,7 @@ function handleRoleBasedLogin() {
                 window.location.href = "dashboard-admin.html";
                 return;
               }
-              window.location.href = "dashboard-user.html";
+              window.location.href = "dashboard-user.php";
             });
         }
         else {
@@ -210,7 +210,7 @@ function handleSimpleProfileEdit() {
 function applyRoleAwareBackLinks() {
   const user = getStoredUser();
   const role = (user && user.role) ? user.role : "researcher";
-  const dashboardHref = role === "admin" ? "dashboard-admin.html" : "dashboard-user.html";
+  const dashboardHref = role === "admin" ? "dashboard-admin.html" : "dashboard-user.php";
   const backLinks = document.querySelectorAll("[data-back-dashboard]");
   backLinks.forEach((link) => {
     link.setAttribute("href", dashboardHref);

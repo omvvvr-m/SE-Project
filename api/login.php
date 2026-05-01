@@ -18,8 +18,6 @@ if ($res->num_rows > 0) {
     $user = $res->fetch_assoc();
     $_SESSION["vlms_user_id"] = (int)$user["userID"];
     $_SESSION["vlms_role"] = $user["role"];
-
-    session_start();
     $_SESSION["user_id"] = $user["userID"];
     echo json_encode([
 
