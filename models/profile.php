@@ -8,6 +8,7 @@ $profileModel = new Profile($conn);
 
 if (isset($_POST["profile_action"])) {
     $sessionUserID = isset($_SESSION["vlms_user_id"]) ? (int)$_SESSION["vlms_user_id"] : 0;
+    $sessionRole = isset($_SESSION["vlms_role"]) ? trim((string)$_SESSION["vlms_role"]) : "";
     $userID = $sessionUserID > 0 ? $sessionUserID : (isset($_POST["user_id"]) ? (int)$_POST["user_id"] : 0);
     $from = isset($_POST["from"]) ? $_POST["from"] : "user";
 
@@ -20,7 +21,17 @@ if (isset($_POST["profile_action"])) {
         $firstName = trim($_POST["first_name"] ?? "");
         $lastName = trim($_POST["last_name"] ?? "");
         $phoneNo = trim($_POST["phone_no"] ?? "");
-        $role = trim($_POST["role"] ?? "");
+        $existingUser = $profileModel->getUserById($userID);
+        if (!$existingUser) {
+            header("Location: profile.php?user_id=$userID&from=" . urlencode($from) . "&error=" . urlencode("User not found."));
+            exit();
+        }
+
+        $currentRole = trim((string)($existingUser["role"] ?? ""));
+        $requestedRole = trim($_POST["role"] ?? $currentRole);
+
+        // Researchers are not allowed to change role/permissions.
+        $role = ($sessionRole === "researcher") ? $currentRole : $requestedRole;
 
         if ($firstName === "" || $lastName === "" || $phoneNo === "" || $role === "") {
             header("Location: profile.php?user_id=$userID&from=" . urlencode($from) . "&error=" . urlencode("All profile fields are required."));

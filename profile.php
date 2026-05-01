@@ -23,8 +23,10 @@ if (!$user) {
   die("No users found in database.");
 }
 
-$backUrl = $from === "admin" ? "dashboard-admin.html" : "dashboard-user.html";
+$backUrl = $from === "admin" ? "dashboard-admin.html" : "dashboard-user.php";
 $fullName = trim(($user["fname"] ?? "") . " " . ($user["lname"] ?? ""));
+$effectiveSessionRole = $sessionRole !== "" ? $sessionRole : ($user["role"] ?? "");
+$canEditRole = $effectiveSessionRole === "admin";
 
 ?>
 <!doctype html>
@@ -87,11 +89,17 @@ $fullName = trim(($user["fname"] ?? "") . " " . ($user["lname"] ?? ""));
               </div>
               <div class="col-md-6">
                 <label class="form-label">Role</label>
-                <select name="role" class="form-select">
+                <?php if (!$canEditRole) { ?>
+                  <input type="hidden" name="role" value="<?php echo htmlspecialchars((string)$user["role"]); ?>" />
+                <?php } ?>
+                <select name="role" class="form-select" <?php echo $canEditRole ? "" : "disabled"; ?>>
                   <option value="researcher" <?php echo $user["role"] === "researcher" ? "selected" : ""; ?>>researcher</option>
                   <option value="admin" <?php echo $user["role"] === "admin" ? "selected" : ""; ?>>admin</option>
                   <option value="guest" <?php echo $user["role"] === "guest" ? "selected" : ""; ?>>guest</option>
                 </select>
+                <?php if (!$canEditRole) { ?>
+                  <small class="text-secondary">Only admin can change role permissions.</small>
+                <?php } ?>
               </div>
               <div class="col-md-12">
                 <label class="form-label">User ID</label>

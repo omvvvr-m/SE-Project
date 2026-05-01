@@ -48,10 +48,10 @@ $result = $equipment->getAll();
             <h2 class="h5 mb-4">User Panel</h2>
             <nav class="nav flex-column">
               <a class="nav-link active" href="dashboard-user.php"><i class="bi bi-house me-2"></i>Dashboard</a>
-              <a class="nav-link" href="#profile-panel"><i class="bi bi-person me-2"></i>Profile</a>
+              <a class="nav-link" href="profile.php?from=user&user_id=<?php echo urlencode((string)$currentUserId); ?>" data-profile-link><i class="bi bi-person me-2"></i>Profile</a>
               <a class="nav-link" href="#booking-panel"><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
               <a class="nav-link" href="#session-panel"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
-              <a class="nav-link" href="#grants-panel"><i class="bi bi-cash-coin me-2"></i>Grants</a>
+              <a class="nav-link" href="my-grants.php"><i class="bi bi-cash-coin me-2"></i>Grants Panel</a>
               <a class="nav-link" href="login.html"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
             </nav>
           </div>
@@ -74,7 +74,7 @@ $result = $equipment->getAll();
               <div class="card-soft p-3">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <h2 class="panel-title mb-0">Profile Panel</h2>
-                  <a href="profile.html" class="btn btn-outline-primary btn-outline-soft btn-sm">Open Full Profile</a>
+                  <a href="profile.php?from=user&user_id=<?php echo urlencode((string)$currentUserId); ?>" data-profile-link class="btn btn-outline-primary btn-outline-soft btn-sm">Open Full Profile</a>
                 </div>
                 <div class="row g-2">
                   <div class="col-md-3"><span class="muted-label">Full Name:</span>
@@ -153,16 +153,12 @@ $result = $equipment->getAll();
 
             <div id="grants-panel" class="col-12 col-xl-6">
               <div class="card-soft p-3 h-100">
-                <h2 class="panel-title mb-3">My Grants</h2>
-                <div class="mb-2 p-2 border rounded-3">
-                  <div class="fw-semibold">Nano Research 2026</div>
-                  <div class="small text-secondary">Balance: $4,500</div>
-                  <div class="small text-secondary">Expiry: 2026-12-31</div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h2 class="panel-title mb-0">My Grants</h2>
+                  <a href="my-grants.php" class="btn btn-outline-primary btn-outline-soft btn-sm">Open Grants Page</a>
                 </div>
-                <div class="p-2 border rounded-3">
-                  <div class="fw-semibold">Imaging Development Fund</div>
-                  <div class="small text-secondary">Balance: $2,100</div>
-                  <div class="small text-secondary">Expiry: 2026-09-30</div>
+                <div id="myGrantsList">
+                  <div class="small text-secondary">Loading grants...</div>
                 </div>
               </div>
             </div>
@@ -255,7 +251,7 @@ $result = $equipment->getAll();
     bookingStartTime.addEventListener("input", updateBookingPriceLabel);
     bookingEndTime.addEventListener("input", updateBookingPriceLabel);
   </script>
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=20260501-2301"></script>
 </body>
 
 </html>
