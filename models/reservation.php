@@ -206,18 +206,17 @@ class Reservation
 
     public function checkConflicts($resDate, $startTime, $endTime)
     {
-        // INTERLOCK SYSTEM
         $sql = "SELECT COUNT(*) as count FROM reservation 
-                WHERE resDate = '$resDate'
-                AND (
-                    startTime < '$endTime'
-                    AND endTime > '$startTime'
-                )";
+            WHERE resDate = '$resDate'
+            AND (
+                startTime < '$endTime'
+                AND endTime > '$startTime'
+            )
+            AND (status IS NULL OR status != 'terminated')";
 
         $result = $this->conn->query($sql)->fetch_assoc();
 
-        if ($result['count'] > 0) return 1;
-        else return 0; // no conflicts
+        return $result['count'] > 0;
     }
 
 
