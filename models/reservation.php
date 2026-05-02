@@ -278,7 +278,6 @@ class Reservation
     }
     public function createBooking($userID, $eqID, $grantID, $resDate, $startTime, $endTime, $price)
     {
-
         $userID = (int)$userID;
         $eqID = (int)$eqID;
         $price = (int)$price;
@@ -286,39 +285,30 @@ class Reservation
         $resDate = $this->conn->real_escape_string($resDate);
         $startTime = $this->conn->real_escape_string($startTime);
         $endTime = $this->conn->real_escape_string($endTime);
-        if ($this->user->deduct($price) == 0) {
-
-            $sql = "INSERT INTO reservation (userID, eqID, grantID, resDate, startTime, endTime, status)
-            VALUES ($userID, $eqID,$grantID, '$resDate', '$startTime', '$endTime', 'ready')";
-            if ($this->checkConflicts($resDate, $startTime, $endTime) == 0) {
-                $result = $this->conn->query($sql);
-            } else {
-                $this->errorMsg = "There's a booking already in this timezone.";
-                return false;
-            }
-
-            $eqColumn = $this->getEquipmentColumn();
-            if ($this->columnExists('reservation', 'resDate')) {
-                $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, resDate, startTime, endTime, status)
-                VALUES ($userID, $eqID, $grantIDValue, '$resDate', '$startTime', '$endTime', 'ready')";
-            } else {
-                $startDateTime = $this->conn->real_escape_string($resDate . ' ' . $startTime . ':00');
-                $endDateTime = $this->conn->real_escape_string($resDate . ' ' . $endTime . ':00');
-                $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, startTime, endTime, status)
-                VALUES ($userID, $eqID, $grantIDValue, '$startDateTime', '$endDateTime', 'ready')";
-            }
-
-            $result = $this->conn->query($sql);
-
-            if (!$result) {
-                $this->errorMsg = "Insufficient Funds";
-                return false;
-            }
-
-            return true;
+        if ($this->checkConflicts($resDate, $startTime, $endTime) != 0) {
+            $this->errorMsg = "There's a booking already in this timezone.";
+            return false;
         }
-
-        return false;
+        if ($this->user->deduct($price) != 0) {
+            $this->errorMsg = "Insufficient Funds";
+            return false;
+        }
+        $eqColumn = $this->getEquipmentColumn();
+        if ($this->columnExists('reservation', 'resDate')) {
+            $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, resDate, startTime, endTime, status)
+                VALUES ($userID, $eqID, $grantIDValue, '$resDate', '$startTime', '$endTime', 'ready')";
+        } else {
+            $startDateTime = $this->conn->real_escape_string($resDate . ' ' . $startTime . ':00');
+            $endDateTime = $this->conn->real_escape_string($resDate . ' ' . $endTime . ':00');
+            $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, startTime, endTime, status)
+                VALUES ($userID, $eqID, $grantIDValue, '$startDateTime', '$endDateTime', 'ready')";
+        }
+        $result = $this->conn->query($sql);
+        if (!$result) {
+            $this->errorMsg = "Could not save reservation.";
+            return false;
+        }
+        return true;
     }
     private function columnExists($tableName, $columnName)
     {

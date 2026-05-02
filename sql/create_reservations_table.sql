@@ -1,4 +1,4 @@
-CREATE TABLE `reservations` (
+wherCREATE TABLE `reservations` (
   `bookingID` int(11) NOT NULL,
   `userID` int(11) NOT NULL,
   `startTime` datetime NOT NULL,
