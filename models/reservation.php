@@ -1,112 +1,5 @@
 <?php
-// require_once __DIR__ . "/../config/db.php";
-// $reservationModel = new Reservation($conn);
 
-// if (isset($_GET["delete_id"])) {
-//     $reservationModel->removeReservation($_GET["delete_id"]);
-//     header("Location: ../reservations-management.php");
-//     exit();
-// }
-
-// if (
-//     isset($_POST["user_id"]) &&
-//     isset($_POST["start_time"]) &&
-//     isset($_POST["end_time"]) &&
-//     isset($_POST["equipment_id"]) &&
-//     isset($_POST["status"])
-// ) {
-//     $userID = $_POST["user_id"];
-//     $startTime = $_POST["start_time"];
-//     $endTime = $_POST["end_time"];
-//     $equipmentID = $_POST["equipment_id"];
-//     $status = $_POST["status"];
-
-//     if (isset($_POST["booking_id"]) && $_POST["booking_id"] !== "") {
-//         $reservationModel->updateReservation($_POST["booking_id"], $userID, $startTime, $endTime, $equipmentID, $status);
-//     } else {
-//         $reservationModel->addReservation($userID, $startTime, $endTime, $equipmentID, $status);
-//     }
-
-//     header("Location: reservations-management.php");
-//     exit();
-// }
-
-
-/*class Reservation
-{
-    private $conn;
-
-    public function __construct($db)
-    {
-        $this->conn = $db;
-        $this->ensureTableExists();
-    }
-
-    public function getAll()
-    {
-        $this->ensureTableExists();
-        $sql = "SELECT * FROM reservations ORDER BY bookingID DESC";
-        return $this->conn->query($sql);
-    }
-
-    public function addReservation($userID, $startTime, $endTime, $equipmentID, $status)
-    {
-        $this->ensureTableExists();
-        $newBookingID = $this->getNextBookingID();
-        $sql = "INSERT INTO reservations (bookingID, userID, startTime, endTime, equipmentID, status)
-                VALUES ('$newBookingID', '$userID', '$startTime', '$endTime', '$equipmentID', '$status')";
-        return $this->conn->query($sql);
-    }
-
-    public function removeReservation($bookingID)
-    {
-        $this->ensureTableExists();
-        $sql = "DELETE FROM reservations WHERE bookingID = '$bookingID'";
-        return $this->conn->query($sql);
-    }
-
-    public function updateReservation($bookingID, $userID, $startTime, $endTime, $equipmentID, $status)
-    {
-        $this->ensureTableExists();
-        $sql = "UPDATE reservations SET
-                userID = '$userID',
-                startTime = '$startTime',
-                endTime = '$endTime',
-                equipmentID = '$equipmentID',
-                status = '$status'
-                WHERE bookingID = '$bookingID'";
-        return $this->conn->query($sql);
-    }
-
-    private function getNextBookingID()
-    {
-        $this->ensureTableExists();
-        $sql = "SELECT MAX(bookingID) AS maxID FROM reservations";
-        $result = $this->conn->query($sql);
-
-        if ($result && $row = $result->fetch_assoc()) {
-            return ((int)$row["maxID"]) + 1;
-        }
-
-        return 1;
-    }
-
-    private function ensureTableExists()
-    {
-        $sql = "CREATE TABLE IF NOT EXISTS reservations (
-                bookingID int(11) NOT NULL,
-                userID int(11) NOT NULL,
-                startTime datetime NOT NULL,
-                endTime datetime NOT NULL,
-                equipmentID int(11) NOT NULL,
-                status enum('ready','ongoing','terminated') NOT NULL DEFAULT 'ready',
-                PRIMARY KEY (bookingID)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
-
-        $this->conn->query($sql);
-    }
-}
-    */
 require_once __DIR__ . "/../models/user.php";
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -155,6 +48,7 @@ function booking_validation_error($resDate, $startTime, $endTime)
 $reservation = new Reservation($conn);
 $user = new User($conn);
 
+
 if (
     isset($_POST['eqID']) &&
     isset($_POST['resDate']) &&
@@ -177,7 +71,7 @@ if (
     }
 
     if (!$reservation->createBooking($userID, $eqID, $grantID, $resDate, $startTime, $endTime, $price)) {
-        $_SESSION['booking_error'] = 'Insufficient balance.';
+        $_SESSION['booking_error'] = $reservation->errorMsg;
     }
     header('Location: dashboard-user.php');
     exit();
@@ -190,6 +84,8 @@ class Reservation
 {
     public $user;
     private $conn;
+    public $errorMsg = "";
+
 
     public function __construct($db)
     {
@@ -204,6 +100,7 @@ class Reservation
     }
     public function addReservationFromAdmin($userID, $startDateTime, $endDateTime, $equipmentID, $status)
     {
+
         $userID = (int)$userID;
         $equipmentID = (int)$equipmentID;
         $status = in_array($status, ['ready', 'ongoing', 'terminated'], true) ? $status : 'ready';
@@ -306,6 +203,24 @@ class Reservation
                   AND endTime < '$nowSql'");
         }
     }
+
+    public function checkConflicts($resDate, $startTime, $endTime)
+    {
+        // INTERLOCK SYSTEM
+        $sql = "SELECT COUNT(*) as count FROM reservation 
+                WHERE resDate = '$resDate'
+                AND (
+                    startTime < '$endTime'
+                    AND endTime > '$startTime'
+                )";
+
+        $result = $this->conn->query($sql)->fetch_assoc();
+
+        if ($result['count'] > 0) return 1;
+        else return 0; // no conflicts
+    }
+
+
     public function getActiveSessionForUser($userID)
     {
         $userID = (int)$userID;
@@ -425,7 +340,6 @@ class Reservation
     }
     public function createBooking($userID, $eqID, $grantID, $resDate, $startTime, $endTime, $price)
     {
-
         $userID = (int)$userID;
         $eqID = (int)$eqID;
         $price = (int)$price;
@@ -433,28 +347,30 @@ class Reservation
         $resDate = $this->conn->real_escape_string($resDate);
         $startTime = $this->conn->real_escape_string($startTime);
         $endTime = $this->conn->real_escape_string($endTime);
-        if ($this->user->deduct($price) == 0) {
-            $eqColumn = $this->getEquipmentColumn();
-            if ($this->columnExists('reservation', 'resDate')) {
-                $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, resDate, startTime, endTime, status)
-                VALUES ($userID, $eqID, $grantIDValue, '$resDate', '$startTime', '$endTime', 'ready')";
-            } else {
-                $startDateTime = $this->conn->real_escape_string($resDate . ' ' . $startTime . ':00');
-                $endDateTime = $this->conn->real_escape_string($resDate . ' ' . $endTime . ':00');
-                $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, startTime, endTime, status)
-                VALUES ($userID, $eqID, $grantIDValue, '$startDateTime', '$endDateTime', 'ready')";
-            }
-
-            $result = $this->conn->query($sql);
-
-            if (!$result) {
-                die($this->conn->error);
-            }
-
-            return true;
+        if ($this->checkConflicts($resDate, $startTime, $endTime) != 0) {
+            $this->errorMsg = "There's a booking already in this timezone.";
+            return false;
         }
-
-        return false;
+        if ($this->user->deduct($price) != 0) {
+            $this->errorMsg = "Insufficient Funds";
+            return false;
+        }
+        $eqColumn = $this->getEquipmentColumn();
+        if ($this->columnExists('reservation', 'resDate')) {
+            $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, resDate, startTime, endTime, status)
+                VALUES ($userID, $eqID, $grantIDValue, '$resDate', '$startTime', '$endTime', 'ready')";
+        } else {
+            $startDateTime = $this->conn->real_escape_string($resDate . ' ' . $startTime . ':00');
+            $endDateTime = $this->conn->real_escape_string($resDate . ' ' . $endTime . ':00');
+            $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, startTime, endTime, status)
+                VALUES ($userID, $eqID, $grantIDValue, '$startDateTime', '$endDateTime', 'ready')";
+        }
+        $result = $this->conn->query($sql);
+        if (!$result) {
+            $this->errorMsg = "Could not save reservation.";
+            return false;
+        }
+        return true;
     }
     private function columnExists($tableName, $columnName)
     {
