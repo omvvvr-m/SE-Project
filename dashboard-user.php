@@ -19,8 +19,63 @@ require_once "models/reservation.php";
 $reservation = new Reservation($conn);
 $equipment = new Equipment($conn);
 
+$sessionActionMsg = $_SESSION['session_action_msg'] ?? null;
+unset($_SESSION['session_action_msg']);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['session_action'])) {
+  $action = $_POST['session_action'];
+  $resID = isset($_POST['res_id']) ? (int)$_POST['res_id'] : 0;
+
+  if ($action === 'terminate' && $resID > 0) {
+    $reservation->terminateSession($resID, (int)$currentUserId);
+    $_SESSION['session_action_msg'] = 'Session terminated successfully.';
+  } elseif ($action === 'emergency' && $resID > 0) {
+    $message = trim($_POST['emergency_message'] ?? '');
+    $startTime = $_POST['start_time'] ?? '';
+    $endTime = $_POST['end_time'] ?? '';
+    if ($message === '') {
+      $_SESSION['session_action_msg'] = 'Please write the emergency issue details.';
+    } else {
+      $reservation->createEmergencyReport($resID, (int)$currentUserId, $message, $startTime, $endTime);
+      $reservation->terminateSession($resID, (int)$currentUserId);
+      $_SESSION['session_action_msg'] = 'Emergency report sent to admin and session terminated.';
+    }
+  }
+
+  header("Location: dashboard-user.php#session-panel");
+  exit;
+}
+
 $result = $equipment->getAll();
 $reservResult = $reservation->getAllForUser();
+$activeSession = $reservation->getActiveSessionForUser((int)$currentUserId);
+$sessionEquipmentLabel = null;
+$sessionRemainingTime = null;
+
+function format_remaining_time($resDate, $endTime)
+{
+  $end = null;
+  if (!empty($resDate)) {
+    $end = DateTime::createFromFormat('Y-m-d H:i', $resDate . ' ' . $endTime);
+  }
+  if (!$end) {
+    $end = DateTime::createFromFormat('Y-m-d H:i:s', date('Y-m-d') . ' ' . $endTime);
+  }
+  if (!$end) {
+    return "00:00:00";
+  }
+  $now = new DateTime();
+  if ($now >= $end) {
+    return "00:00:00";
+  }
+  $seconds = $end->getTimestamp() - $now->getTimestamp();
+  $hours = floor($seconds / 3600);
+  $minutes = floor(($seconds % 3600) / 60);
+  $secs = $seconds % 60;
+  return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
+}
+$sessionEquipmentLabel = $activeSession ? ($activeSession['eqName'] ?? ('Equipment #' . ($activeSession['eqID'] ?? '-'))) : null;
+$sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['resDate'] ?? '', $activeSession['endTime']) : null;
 ?>
 
 <!doctype html>
@@ -52,8 +107,8 @@ $reservResult = $reservation->getAllForUser();
             <nav class="nav flex-column">
               <a class="nav-link active" href="dashboard-user.php"><i class="bi bi-house me-2"></i>Dashboard</a>
               <a class="nav-link" href="profile.php?from=user&user_id=<?php echo urlencode((string)$currentUserId); ?>" data-profile-link><i class="bi bi-person me-2"></i>Profile</a>
-              <a class="nav-link" href="#booking-panel"><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
-              <a class="nav-link" href="#session-panel"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
+              <a class="nav-link" href="#booking-panel" data-open-booking-modal><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
+              <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#sessionInfoModal"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
               <a class="nav-link" href="my-grants.php"><i class="bi bi-cash-coin me-2"></i>Grants Panel</a>
               <a class="nav-link" href="login.html"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
             </nav>
@@ -70,11 +125,12 @@ $reservResult = $reservation->getAllForUser();
               <h1 class="h4 mb-1">Researcher Dashboard</h1>
               <small id="welcomeText" class="text-secondary">Welcome back, <span class="fullName"></span></small>
             </div>
-            <div class="form-check form-switch">
-              <input class="form-check-input" type="checkbox" id="toggleSession" />
-              <label class="form-check-label" for="toggleSession">Simulate ongoing session</label>
-            </div>
+            <a href="#" class="btn btn-outline-primary btn-outline-soft btn-sm" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">Open Session Panel</a>
           </div>
+          <?php if (!empty($sessionActionMsg)) { ?>
+            <div class="alert alert-info py-2 mb-3" role="alert"><?php echo htmlspecialchars($sessionActionMsg); ?></div>
+          <?php } ?>
+
 
           <div class="row g-3">
             <div id="profile-panel" class="col-12">
@@ -130,7 +186,7 @@ $reservResult = $reservation->getAllForUser();
                               $resu = $res->fetch_assoc();
                               echo $resu['eqName'];
                               ?></td>
-                          <td><?php echo $row['resDate']; ?></td>
+                          <td><?php echo htmlspecialchars($row['resDate'] ?? date('Y-m-d', strtotime($row['startTime']))); ?></td>
                           <td><?php echo $row['startTime']; ?></td>
                           <td><?php echo $row['endTime']; ?></td>
                           <td> <?php if ($row['status'] == 'ongoing') { ?>
@@ -151,18 +207,39 @@ $reservResult = $reservation->getAllForUser();
             </div>
 
             <div id="session-panel" class="col-12 col-xl-6">
-              <div id="noSessionPanel" class="card-soft p-3 h-100">
+              <div class="card-soft p-3 h-100">
                 <h2 class="panel-title">Session Panel</h2>
-                <p class="text-secondary mb-0">No ongoing session currently</p>
-              </div>
-              <div id="sessionPanel" class="card-soft p-3 h-100 d-none">
-                <h2 class="panel-title">Active Session</h2>
-                <p class="mb-1"><span class="muted-label">Equipment:</span> Electron Microscope</p>
-                <p class="mb-1"><span class="muted-label">Remaining Time:</span> 01:15:20</p>
-                <p class="mb-1"><span class="muted-label">Status:</span> <span
-                    class="status-badge bg-success-subtle text-success">Ongoing</span></p>
-                <p class="mb-1"><span class="muted-label">Start:</span> 09:00 AM</p>
-                <p class="mb-0"><span class="muted-label">End:</span> 11:00 AM</p>
+                <?php if ($activeSession) { ?>
+                  <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
+                  <p class="mb-1"><span class="muted-label">Remaining Time:</span> <?php echo htmlspecialchars($sessionRemainingTime); ?></p>
+                  <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
+                  <p class="mb-3"><span class="muted-label">End Time:</span> <?php echo htmlspecialchars($activeSession['endTime']); ?></p>
+
+                  <div class="d-flex gap-2 mb-3">
+                    <form method="POST" class="m-0">
+                      <input type="hidden" name="session_action" value="terminate" />
+                      <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Terminate</button>
+                    </form>
+                    <button class="btn btn-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#emergencyBox" aria-expanded="false" aria-controls="emergencyBox">
+                      Emergency
+                    </button>
+                  </div>
+
+                  <div class="collapse" id="emergencyBox">
+                    <form method="POST">
+                      <input type="hidden" name="session_action" value="emergency" />
+                      <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                      <input type="hidden" name="start_time" value="<?php echo htmlspecialchars($activeSession['startTime']); ?>" />
+                      <input type="hidden" name="end_time" value="<?php echo htmlspecialchars($activeSession['endTime']); ?>" />
+                      <label for="emergency_message" class="form-label mb-1">Describe the issue</label>
+                      <textarea id="emergency_message" name="emergency_message" class="form-control mb-2" rows="3" placeholder="Write the emergency issue..." required></textarea>
+                      <button type="submit" class="btn btn-danger btn-sm">Send Report & Terminate</button>
+                    </form>
+                  </div>
+                <?php } else { ?>
+                  <p class="text-secondary mb-0">No ongoing session currently.</p>
+                <?php } ?>
               </div>
             </div>
 
@@ -227,6 +304,49 @@ $reservResult = $reservation->getAllForUser();
           </div>
         </div>
       </form>
+    </div>
+  </div>
+  <div class="modal fade" id="sessionInfoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title fs-5">Session Panel</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <?php if ($activeSession) { ?>
+            <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
+            <p class="mb-1"><span class="muted-label">Remaining Time:</span> <?php echo htmlspecialchars($sessionRemainingTime); ?></p>
+            <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
+            <p class="mb-3"><span class="muted-label">End Time:</span> <?php echo htmlspecialchars($activeSession['endTime']); ?></p>
+
+            <div class="d-flex gap-2 mb-3">
+              <form method="POST" class="m-0">
+                <input type="hidden" name="session_action" value="terminate" />
+                <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                <button type="submit" class="btn btn-outline-danger btn-sm">Terminate</button>
+              </form>
+              <button class="btn btn-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#modalEmergencyBox" aria-expanded="false" aria-controls="modalEmergencyBox">
+                Emergency
+              </button>
+            </div>
+
+            <div class="collapse" id="modalEmergencyBox">
+              <form method="POST">
+                <input type="hidden" name="session_action" value="emergency" />
+                <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                <input type="hidden" name="start_time" value="<?php echo htmlspecialchars($activeSession['startTime']); ?>" />
+                <input type="hidden" name="end_time" value="<?php echo htmlspecialchars($activeSession['endTime']); ?>" />
+                <label for="modal_emergency_message" class="form-label mb-1">Describe the issue</label>
+                <textarea id="modal_emergency_message" name="emergency_message" class="form-control mb-2" rows="3" placeholder="Write the emergency issue..." required></textarea>
+                <button type="submit" class="btn btn-danger btn-sm">Send Report & Terminate</button>
+              </form>
+            </div>
+          <?php } else { ?>
+            <p class="text-secondary mb-0">No ongoing session currently.</p>
+          <?php } ?>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -320,7 +440,25 @@ $reservResult = $reservation->getAllForUser();
     bookingStartTime.addEventListener("input", updateBookingPriceLabel);
     bookingEndTime.addEventListener("input", updateBookingPriceLabel);
   </script>
-  <script src="js/app.js?v=20260501-2301"></script>
+  <script>
+    document.querySelectorAll('[data-open-booking-modal]').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+
+        const bookingPanel = document.getElementById('booking-panel');
+        if (bookingPanel) {
+          bookingPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        const bookingModalEl = document.getElementById('bookingModal');
+        if (bookingModalEl && window.bootstrap && window.bootstrap.Modal) {
+          const modal = window.bootstrap.Modal.getOrCreateInstance(bookingModalEl);
+          modal.show();
+        }
+      });
+    });
+  </script>
+  <script src="js/app.js?v=20260503-0051"></script>
 </body>
 
 </html>
