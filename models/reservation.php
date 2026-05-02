@@ -229,6 +229,13 @@ class Reservation
         $eqID = (int)$eqID;
         $hasResDate = $this->columnExists('reservation', 'resDate');
         $eqColumn = $this->getEquipmentColumn();
+        $sql = "SELECT COUNT(*) as count FROM reservation 
+            WHERE resDate = '$resDate'
+            AND (
+                startTime < '$endTime'
+                AND endTime > '$startTime'
+            )
+            AND (status IS NULL OR status != 'terminated')";
 
         if ($hasResDate) {
             $resDate = $this->conn->real_escape_string($resDate);
@@ -258,6 +265,7 @@ class Reservation
         }
         $row = $result->fetch_assoc();
         return ((int)($row['cnt'] ?? 0)) > 0 ? 1 : 0;
+        return $result['count'] > 0;
     }
 
 
