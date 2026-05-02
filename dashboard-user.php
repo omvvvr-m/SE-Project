@@ -18,6 +18,7 @@ require_once "models/reservation.php";
 
 $reservation = new Reservation($conn);
 $equipment = new Equipment($conn);
+$reservation->normalizeStatusesForUser((int)$currentUserId);
 
 $sessionActionMsg = $_SESSION['session_action_msg'] ?? null;
 unset($_SESSION['session_action_msg']);

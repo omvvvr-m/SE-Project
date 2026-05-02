@@ -276,14 +276,48 @@ class Reservation
         $sql = "SELECT * FROM reservation where userID = " . $_SESSION["user_id"];
         return $this->conn->query($sql);
     }
+    public function normalizeStatusesForUser($userID)
+    {
+        $userID = (int)$userID;
+        $hasResDate = $this->columnExists('reservation', 'resDate');
+        $nowSql = $this->conn->real_escape_string(date('Y-m-d H:i:s'));
+
+        if ($hasResDate) {
+            $this->conn->query("UPDATE reservation
+                SET status = 'ready'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND STR_TO_DATE(CONCAT(resDate, ' ', startTime), '%Y-%m-%d %H:%i:%s') > '$nowSql'");
+            $this->conn->query("UPDATE reservation
+                SET status = 'terminated'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND STR_TO_DATE(CONCAT(resDate, ' ', endTime), '%Y-%m-%d %H:%i:%s') < '$nowSql'");
+        } else {
+            $this->conn->query("UPDATE reservation
+                SET status = 'ready'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND startTime > '$nowSql'");
+            $this->conn->query("UPDATE reservation
+                SET status = 'terminated'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND endTime < '$nowSql'");
+        }
+    }
     public function getActiveSessionForUser($userID)
     {
         $userID = (int)$userID;
+        $idColumn = $this->getReservationIdColumn();
+        $eqColumn = $this->getEquipmentColumn();
+        $hasResDate = $this->columnExists('reservation', 'resDate');
+
         $sql = "SELECT r.*, e.eqName
                 FROM reservation r
-                LEFT JOIN equipments e ON e.eqID = r.eqID
+                LEFT JOIN equipments e ON e.eqID = r.$eqColumn
                 WHERE r.userID = $userID AND r.status = 'ongoing'
-                ORDER BY r.resID DESC
+                ORDER BY r.$idColumn DESC
                 LIMIT 1";
         $result = $this->conn->query($sql);
         if (!$result) {
@@ -291,17 +325,44 @@ class Reservation
         }
         $active = $result->fetch_assoc();
         if ($active) {
-            return $active;
+            $now = new DateTime();
+            $start = $this->parseReservationStartDateTime($active, $hasResDate);
+            $end = $this->parseReservationEndDateTime($active, $hasResDate);
+            if ($start && $start > $now) {
+                $rid = (int)$active[$idColumn];
+                $this->conn->query("UPDATE reservation SET status = 'ready' WHERE $idColumn = $rid");
+                $active = null;
+            } elseif ($end && $end < $now) {
+                $rid = (int)$active[$idColumn];
+                $this->conn->query("UPDATE reservation SET status = 'terminated' WHERE $idColumn = $rid");
+                $active = null;
+            } else {
+                return $active;
+            }
         }
 
-        // Auto-start the latest ready reservation if no ongoing one exists.
-        $readySql = "SELECT r.*, e.eqName
-                     FROM reservation r
-                     LEFT JOIN equipments e ON e.eqID = r.eqID
-                     WHERE r.userID = $userID
-                       AND r.status = 'ready'
-                     ORDER BY r.resID DESC
-                     LIMIT 1";
+        $nowSql = $this->conn->real_escape_string(date('Y-m-d H:i:s'));
+        if ($hasResDate) {
+            $readySql = "SELECT r.*, e.eqName
+                         FROM reservation r
+                         LEFT JOIN equipments e ON e.eqID = r.$eqColumn
+                         WHERE r.userID = $userID
+                           AND r.status = 'ready'
+                           AND STR_TO_DATE(CONCAT(r.resDate, ' ', r.startTime), '%Y-%m-%d %H:%i:%s') <= '$nowSql'
+                           AND STR_TO_DATE(CONCAT(r.resDate, ' ', r.endTime), '%Y-%m-%d %H:%i:%s') >= '$nowSql'
+                         ORDER BY STR_TO_DATE(CONCAT(r.resDate, ' ', r.startTime), '%Y-%m-%d %H:%i:%s') ASC
+                         LIMIT 1";
+        } else {
+            $readySql = "SELECT r.*, e.eqName
+                         FROM reservation r
+                         LEFT JOIN equipments e ON e.eqID = r.$eqColumn
+                         WHERE r.userID = $userID
+                           AND r.status = 'ready'
+                           AND r.startTime <= '$nowSql'
+                           AND r.endTime >= '$nowSql'
+                         ORDER BY r.startTime ASC
+                         LIMIT 1";
+        }
         $readyResult = $this->conn->query($readySql);
         if (!$readyResult) {
             return null;
@@ -310,8 +371,8 @@ class Reservation
         if (!$readyRow) {
             return null;
         }
-        $resID = (int)$readyRow['resID'];
-        $this->conn->query("UPDATE reservation SET status = 'ongoing' WHERE resID = $resID");
+        $rid = (int)$readyRow[$idColumn];
+        $this->conn->query("UPDATE reservation SET status = 'ongoing' WHERE $idColumn = $rid");
         $readyRow['status'] = 'ongoing';
         return $readyRow;
     }
@@ -319,9 +380,10 @@ class Reservation
     {
         $resID = (int)$resID;
         $userID = (int)$userID;
+        $idColumn = $this->getReservationIdColumn();
         $sql = "UPDATE reservation
                 SET status = 'terminated'
-                WHERE resID = $resID AND userID = $userID AND status = 'ongoing'";
+                WHERE $idColumn = $resID AND userID = $userID AND status = 'ongoing'";
         return $this->conn->query($sql);
     }
     public function createEmergencyReport($resID, $userID, $message, $startTime, $endTime)
@@ -404,6 +466,38 @@ class Reservation
             return false;
         }
         return $result->num_rows > 0;
+    }
+    private function parseReservationStartDateTime(array $row, $hasResDate)
+    {
+        $startRaw = trim((string)($row['startTime'] ?? ''));
+        if ($startRaw === '') {
+            return null;
+        }
+        if ($hasResDate) {
+            $resDate = trim((string)($row['resDate'] ?? ''));
+            if ($resDate !== '') {
+                return DateTime::createFromFormat('Y-m-d H:i:s', $resDate . ' ' . $startRaw)
+                    ?: DateTime::createFromFormat('Y-m-d H:i', $resDate . ' ' . $startRaw);
+            }
+        }
+        return DateTime::createFromFormat('Y-m-d H:i:s', $startRaw)
+            ?: DateTime::createFromFormat('Y-m-d H:i', $startRaw);
+    }
+    private function parseReservationEndDateTime(array $row, $hasResDate)
+    {
+        $endRaw = trim((string)($row['endTime'] ?? ''));
+        if ($endRaw === '') {
+            return null;
+        }
+        if ($hasResDate) {
+            $resDate = trim((string)($row['resDate'] ?? ''));
+            if ($resDate !== '') {
+                return DateTime::createFromFormat('Y-m-d H:i:s', $resDate . ' ' . $endRaw)
+                    ?: DateTime::createFromFormat('Y-m-d H:i', $resDate . ' ' . $endRaw);
+            }
+        }
+        return DateTime::createFromFormat('Y-m-d H:i:s', $endRaw)
+            ?: DateTime::createFromFormat('Y-m-d H:i', $endRaw);
     }
     private function getReservationIdColumn()
     {
