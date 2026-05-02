@@ -65,7 +65,7 @@
         return $this->conn->query($sql);
     }
 
-    public function updateReservation($bookingID, $userID, $startTime, $endTime, $equipmentID, $status)
+    public function urttotpdateReservation($bookingID, $userID, $startTime, $endTime, $equipmentID, $status)
     {
         $this->ensureTableExists();
         $sql = "UPDATE reservations SET
@@ -155,6 +155,7 @@ function booking_validation_error($resDate, $startTime, $endTime)
 $reservation = new Reservation($conn);
 $user = new User($conn);
 
+
 if (
     isset($_POST['eqID']) &&
     isset($_POST['resDate']) &&
@@ -177,7 +178,7 @@ if (
     }
 
     if (!$reservation->createBooking($userID, $eqID, $grandID, $resDate, $startTime, $endTime, $price)) {
-        $_SESSION['booking_error'] = 'Insufficient balance.';
+        $_SESSION['booking_error'] = $reservation->errorMsg;
     }
     header('Location: dashboard-user.php');
     exit();
@@ -190,6 +191,8 @@ class Reservation
 {
     public $user;
     private $conn;
+    public $errorMsg = "";
+
 
     public function __construct($db)
     {
@@ -207,6 +210,23 @@ class Reservation
         $sql = "SELECT * FROM reservation where userID = " . $_SESSION["user_id"];
         return $this->conn->query($sql);
     }
+
+    public function checkConflicts($resDate, $startTime, $endTime)
+    {
+        // INTERLOCK SYSTEM
+        $sql = "SELECT COUNT(*) as count FROM reservation 
+                WHERE resDate = '$resDate'
+                AND (
+                    startTime < '$endTime'
+                    AND endTime > '$startTime'
+                )";
+
+        $result = $this->conn->query($sql)->fetch_assoc();
+
+        if ($result['count'] > 0) return 1;
+        else return 0; // no conflicts
+    }
+
     public function createBooking($userID, $eqID, $grantID, $resDate, $startTime, $endTime, $price)
     {
 
@@ -219,11 +239,16 @@ class Reservation
         if ($this->user->deduct($price) == 0) {
             $sql = "INSERT INTO reservation (userID, eqID, grantID, resDate, startTime, endTime, status)
             VALUES ($userID, $eqID,$grantID, '$resDate', '$startTime', '$endTime', 'ready')";
-
-            $result = $this->conn->query($sql);
+            if ($this->checkConflicts($resDate, $startTime, $endTime) == 0) {
+                $result = $this->conn->query($sql);
+            } else {
+                $this->errorMsg = "There's a booking already in this timezone.";
+                return false;
+            }
 
             if (!$result) {
-                die($this->conn->error);
+                $this->errorMsg = "Insufficient Funds";
+                return false;
             }
 
             return true;
