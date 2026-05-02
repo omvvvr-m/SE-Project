@@ -6,6 +6,9 @@ require_once "models/user.php";
 $user = new User($conn);
 $result = $user->getAll();
 
+$userMgmtError = $_SESSION["user_mgmt_error"] ?? null;
+unset($_SESSION["user_mgmt_error"]);
+
 ?>
 
 <!doctype html>
@@ -27,6 +30,9 @@ $result = $user->getAll();
 <body>
   <div class="page-wrapper">
     <div class="container-fluid">
+      <?php if (!empty($userMgmtError)) { ?>
+        <div class="alert alert-warning py-2 mb-3" role="alert"><?php echo htmlspecialchars($userMgmtError); ?></div>
+      <?php } ?>
       <div class="topbar p-3 mb-3 d-flex justify-content-between align-items-center">
         <h1 class="h4 mb-0">User Management Panel</h1>
         <div class="d-flex gap-2">
@@ -117,7 +123,10 @@ $result = $user->getAll();
                 <input name="username" id="username" class="form-control" placeholder="Username" required />
               </div>
               <div class="col-6">
-                <input name="phone_no" id="phone_no" class="form-control" placeholder="Phone number" required />
+                <label for="phone_no" class="form-label small mb-1">Phone (11 digits, starts with 01)</label>
+                <input type="tel" name="phone_no" id="phone_no" class="form-control" placeholder="01xxxxxxxxx" required
+                  pattern="01[0-9]{9}" minlength="11" maxlength="11" inputmode="numeric" autocomplete="tel"
+                  title="Enter 11 digits starting with 01" />
               </div>
               <div class="col-6">
                 <input name="password" id="password" class="form-control" placeholder="Password" required />
@@ -154,6 +163,19 @@ $result = $user->getAll();
     const phoneInput = document.getElementById("phone_no");
     const passwordInput = document.getElementById("password");
     const roleInput = document.getElementById("role");
+
+    function isValidEgPhone(value) {
+      const digits = String(value || "").replace(/\D/g, "");
+      return /^01\d{9}$/.test(digits);
+    }
+
+    userForm.addEventListener("submit", function(e) {
+      if (!isValidEgPhone(phoneInput.value)) {
+        e.preventDefault();
+        alert("رقم الهاتف لازم يكون 11 رقم بالظبط ويبدأ بـ 01.");
+        phoneInput.focus();
+      }
+    });
 
     userModal.addEventListener("show.bs.modal", function(event) {
       const triggerButton = event.relatedTarget;

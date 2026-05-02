@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . "/includes/require_admin.php";
+
 require_once "config/db.php";
 require_once "models/reservation.php";
 
@@ -24,11 +26,17 @@ if (
   $endTime = $_POST["end_time"];
   $equipmentID = $_POST["equipment_id"];
   $status = $_POST["status"];
+  $grantIDPost = isset($_POST["grant_id"]) ? trim((string)$_POST["grant_id"]) : "";
 
   if ($reservationID !== "") {
-    $reservation->updateReservationFromAdmin($reservationID, $userID, $startTime, $endTime, $equipmentID, $status);
+    $grantForUpdate = $grantIDPost !== "" ? $grantIDPost : null;
+    $reservation->updateReservationFromAdmin($reservationID, $userID, $startTime, $endTime, $equipmentID, $status, $grantForUpdate);
   } else {
-    $reservation->addReservationFromAdmin($userID, $startTime, $endTime, $equipmentID, $status);
+    $grantForInsert = $grantIDPost !== "" ? $grantIDPost : null;
+    $ok = $reservation->addReservationFromAdmin($userID, $startTime, $endTime, $equipmentID, $status, $grantForInsert);
+    if (!$ok) {
+      $_SESSION["res_admin_error"] = "No valid grant found for this user. Add a grant in Grants Management first, or pick an existing Grant ID.";
+    }
   }
 
   header("Location: reservations-management.php");
@@ -52,6 +60,21 @@ if ($usersResult) {
   }
 }
 
+$grantsList = [];
+$grantsQuery = $conn->query(
+  "SELECT g.grantID, g.userID, g.balance, g.name
+   FROM grants g
+   ORDER BY g.userID ASC, g.grantID ASC"
+);
+if ($grantsQuery) {
+  while ($gRow = $grantsQuery->fetch_assoc()) {
+    $grantsList[] = $gRow;
+  }
+}
+
+$adminResError = $_SESSION["res_admin_error"] ?? null;
+unset($_SESSION["res_admin_error"]);
+
 ?>
 
 <!doctype html>
@@ -73,6 +96,9 @@ if ($usersResult) {
 <body>
   <div class="page-wrapper">
     <div class="container-fluid">
+      <?php if (!empty($adminResError)) { ?>
+        <div class="alert alert-warning py-2 mb-3"><?php echo htmlspecialchars($adminResError); ?></div>
+      <?php } ?>
       <div class="topbar p-3 mb-3 d-flex justify-content-between align-items-center">
         <h1 class="h4 mb-0">Reservations Management Panel</h1>
         <div class="d-flex gap-2">
@@ -127,6 +153,7 @@ if ($usersResult) {
                       data-start-time="<?php echo htmlspecialchars($row["startTime"]); ?>"
                       data-end-time="<?php echo htmlspecialchars($row["endTime"]); ?>"
                       data-equipment-id="<?php echo htmlspecialchars($equipmentId); ?>"
+                      data-grant-id="<?php echo htmlspecialchars($row["grantID"] ?? $row["grantid"] ?? $row["grant_id"] ?? ""); ?>"
                       data-status="<?php echo htmlspecialchars($row["status"]); ?>">
                       Edit
                     </button>
@@ -214,6 +241,19 @@ if ($usersResult) {
                 <input name="equipment_id" id="equipment_id" class="form-control" placeholder="Equipment ID" required />
               </div>
               <div class="col-12">
+                <label for="grant_id" class="form-label mb-1">Grant</label>
+                <select name="grant_id" id="grant_id" class="form-select">
+                  <option value="">Auto (first grant for user)</option>
+                  <?php foreach ($grantsList as $g) {
+                    $gid = $g["grantID"];
+                    $label = $gid . " — User " . $g["userID"] . " — " . ($g["name"] ?? "") . " ($" . $g["balance"] . ")";
+                  ?>
+                    <option value="<?php echo htmlspecialchars((string)$gid); ?>"><?php echo htmlspecialchars($label); ?></option>
+                  <?php } ?>
+                </select>
+                <div class="form-text">Required by database: reservation must reference a row in <code>grants</code>.</div>
+              </div>
+              <div class="col-12">
                 <select name="status" id="status" class="form-select">
                   <option value="ready">ready</option>
                   <option value="ongoing">ongoing</option>
@@ -248,6 +288,7 @@ if ($usersResult) {
     const startTimeInput = document.getElementById("start_time");
     const endTimeInput = document.getElementById("end_time");
     const equipmentIDInput = document.getElementById("equipment_id");
+    const grantIDInput = document.getElementById("grant_id");
     const statusInput = document.getElementById("status");
 
     reservationModal.addEventListener("show.bs.modal", function(event) {
@@ -262,12 +303,15 @@ if ($usersResult) {
         startTimeInput.value = toDateTimeLocalValue(triggerButton.getAttribute("data-start-time"));
         endTimeInput.value = toDateTimeLocalValue(triggerButton.getAttribute("data-end-time"));
         equipmentIDInput.value = triggerButton.getAttribute("data-equipment-id");
+        const g = triggerButton.getAttribute("data-grant-id") || "";
+        grantIDInput.value = g;
         statusInput.value = triggerButton.getAttribute("data-status");
       } else {
         modalTitle.textContent = "Add Reservation";
         submitBtn.textContent = "Save Reservation";
         reservationForm.reset();
         bookingIDInput.value = "";
+        grantIDInput.value = "";
       }
     });
   </script>

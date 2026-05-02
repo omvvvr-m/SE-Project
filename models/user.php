@@ -1,5 +1,9 @@
 <?php
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once __DIR__ . "/../config/db.php";
 $userModel = new User($conn);
 
@@ -20,7 +24,13 @@ if (
     $firstName = $_POST["first_name"];
     $lastName = $_POST["last_name"];
     $username = $_POST["username"];
-    $phoneNo = $_POST["phone_no"];
+    $phoneDigits = preg_replace('/\D/u', '', (string)$_POST["phone_no"]);
+    if (!preg_match('/^01\d{9}$/', $phoneDigits)) {
+        $_SESSION["user_mgmt_error"] = "رقم الهاتف لازم يكون 11 رقم بالظبط ويبدأ بـ 01 (مثل 01234567890).";
+        header("Location: users-management.php");
+        exit();
+    }
+    $phoneNo = $phoneDigits;
     $password = $_POST["password"];
     $role = $_POST["role"];
 

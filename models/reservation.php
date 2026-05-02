@@ -98,7 +98,7 @@ class Reservation
         $sql = "SELECT * FROM reservation ORDER BY $idColumn DESC";
         return $this->conn->query($sql);
     }
-    public function addReservationFromAdmin($userID, $startDateTime, $endDateTime, $equipmentID, $status)
+    public function addReservationFromAdmin($userID, $startDateTime, $endDateTime, $equipmentID, $status, $grantID = null)
     {
 
         $userID = (int)$userID;
@@ -110,20 +110,32 @@ class Reservation
 
         $eqColumn = $this->getEquipmentColumn();
         $hasResDate = $this->columnExists('reservation', 'resDate');
+        $grantCol = $this->getReservationGrantColumn();
+        $grantSQL = '';
+        $grantVals = '';
+
+        if ($grantCol !== null) {
+            $gid = $this->resolveGrantIdForInsert((int)$userID, $grantID);
+            if ($gid === null) {
+                return false;
+            }
+            $grantSQL = ', ' . $grantCol;
+            $grantVals = ', ' . (string)(int)$gid;
+        }
 
         if ($hasResDate) {
             $resDate = substr($startDateTime, 0, 10);
             $startTime = substr($startDateTime, 11, 8);
             $endTime = substr($endDateTime, 11, 8);
-            $sql = "INSERT INTO reservation (userID, $eqColumn, resDate, startTime, endTime, status)
-                    VALUES ($userID, $equipmentID, '$resDate', '$startTime', '$endTime', '$safeStatus')";
+            $sql = "INSERT INTO reservation (userID, $eqColumn, resDate, startTime, endTime, status$grantSQL)
+                    VALUES ($userID, $equipmentID, '$resDate', '$startTime', '$endTime', '$safeStatus'$grantVals)";
         } else {
-            $sql = "INSERT INTO reservation (userID, $eqColumn, startTime, endTime, status)
-                    VALUES ($userID, $equipmentID, '$startDateTime', '$endDateTime', '$safeStatus')";
+            $sql = "INSERT INTO reservation (userID, $eqColumn, startTime, endTime, status$grantSQL)
+                    VALUES ($userID, $equipmentID, '$startDateTime', '$endDateTime', '$safeStatus'$grantVals)";
         }
         return $this->conn->query($sql);
     }
-    public function updateReservationFromAdmin($reservationID, $userID, $startDateTime, $endDateTime, $equipmentID, $status)
+    public function updateReservationFromAdmin($reservationID, $userID, $startDateTime, $endDateTime, $equipmentID, $status, $grantID = null)
     {
         $reservationID = (int)$reservationID;
         $userID = (int)$userID;
@@ -136,6 +148,14 @@ class Reservation
         $idColumn = $this->getReservationIdColumn();
         $eqColumn = $this->getEquipmentColumn();
         $hasResDate = $this->columnExists('reservation', 'resDate');
+        $grantCol = $this->getReservationGrantColumn();
+        $grantSet = '';
+        if ($grantCol !== null && $grantID !== null && $grantID !== '') {
+            $gid = (int)$grantID;
+            if ($this->grantBelongsToUser($gid, $userID)) {
+                $grantSet = ', ' . $grantCol . ' = ' . $gid;
+            }
+        }
 
         if ($hasResDate) {
             $resDate = substr($startDateTime, 0, 10);
@@ -147,7 +167,7 @@ class Reservation
                         resDate = '$resDate',
                         startTime = '$startTime',
                         endTime = '$endTime',
-                        status = '$safeStatus'
+                        status = '$safeStatus'$grantSet
                     WHERE $idColumn = $reservationID";
         } else {
             $sql = "UPDATE reservation
@@ -155,7 +175,7 @@ class Reservation
                         $eqColumn = $equipmentID,
                         startTime = '$startDateTime',
                         endTime = '$endDateTime',
-                        status = '$safeStatus'
+                        status = '$safeStatus'$grantSet
                     WHERE $idColumn = $reservationID";
         }
         return $this->conn->query($sql);
@@ -204,20 +224,40 @@ class Reservation
         }
     }
 
-    public function checkConflicts($resDate, $startTime, $endTime)
+    public function checkConflicts($eqID, $resDate, $startTime, $endTime)
     {
-        // INTERLOCK SYSTEM
-        $sql = "SELECT COUNT(*) as count FROM reservation 
-                WHERE resDate = '$resDate'
-                AND (
-                    startTime < '$endTime'
-                    AND endTime > '$startTime'
-                )";
+        $eqID = (int)$eqID;
+        $hasResDate = $this->columnExists('reservation', 'resDate');
+        $eqColumn = $this->getEquipmentColumn();
 
-        $result = $this->conn->query($sql)->fetch_assoc();
+        if ($hasResDate) {
+            $resDate = $this->conn->real_escape_string($resDate);
+            $startTime = $this->conn->real_escape_string($startTime);
+            $endTime = $this->conn->real_escape_string($endTime);
+            $sql = "SELECT COUNT(*) AS cnt FROM reservation
+                    WHERE $eqColumn = $eqID
+                      AND resDate = '$resDate'
+                      AND status != 'terminated'
+                      AND STR_TO_DATE(CONCAT(resDate, ' ', startTime), '%Y-%m-%d %H:%i:%s')
+                          < STR_TO_DATE(CONCAT('$resDate', ' ', '$endTime'), '%Y-%m-%d %H:%i:%s')
+                      AND STR_TO_DATE(CONCAT(resDate, ' ', endTime), '%Y-%m-%d %H:%i:%s')
+                          > STR_TO_DATE(CONCAT('$resDate', ' ', '$startTime'), '%Y-%m-%d %H:%i:%s')";
+        } else {
+            $startDt = $this->conn->real_escape_string($resDate . ' ' . $startTime . ':00');
+            $endDt = $this->conn->real_escape_string($resDate . ' ' . $endTime . ':00');
+            $sql = "SELECT COUNT(*) AS cnt FROM reservation
+                    WHERE $eqColumn = $eqID
+                      AND status != 'terminated'
+                      AND startTime < '$endDt'
+                      AND endTime > '$startDt'";
+        }
 
-        if ($result['count'] > 0) return 1;
-        else return 0; // no conflicts
+        $result = $this->conn->query($sql);
+        if (!$result) {
+            return 0;
+        }
+        $row = $result->fetch_assoc();
+        return ((int)($row['cnt'] ?? 0)) > 0 ? 1 : 0;
     }
 
 
@@ -343,11 +383,24 @@ class Reservation
         $userID = (int)$userID;
         $eqID = (int)$eqID;
         $price = (int)$price;
-        $grantIDValue = is_null($grantID) ? "NULL" : (string)((int)$grantID);
+        $grantColBooking = $this->getReservationGrantColumn();
+        $resolvedGrantId = null;
+        if ($grantColBooking !== null) {
+            $resolvedGrantId = $this->resolveGrantIdForInsert($userID, $grantID);
+            if ($resolvedGrantId === null) {
+                $this->errorMsg = "No valid grant for this account. Ask admin to assign a grant.";
+                return false;
+            }
+        } else {
+            $resolvedGrantId = is_null($grantID) ? null : (int)$grantID;
+        }
+        $grantIDSql = $grantColBooking === null
+            ? (is_null($resolvedGrantId) ? "NULL" : (string)(int)$resolvedGrantId)
+            : (string)(int)$resolvedGrantId;
         $resDate = $this->conn->real_escape_string($resDate);
         $startTime = $this->conn->real_escape_string($startTime);
         $endTime = $this->conn->real_escape_string($endTime);
-        if ($this->checkConflicts($resDate, $startTime, $endTime) != 0) {
+        if ($this->checkConflicts($eqID, $resDate, $startTime, $endTime) != 0) {
             $this->errorMsg = "There's a booking already in this timezone.";
             return false;
         }
@@ -356,14 +409,16 @@ class Reservation
             return false;
         }
         $eqColumn = $this->getEquipmentColumn();
+        $grantFrag = $grantColBooking === null ? "" : ", grantID";
+        $grantVals = $grantColBooking === null ? "" : ", $grantIDSql";
         if ($this->columnExists('reservation', 'resDate')) {
-            $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, resDate, startTime, endTime, status)
-                VALUES ($userID, $eqID, $grantIDValue, '$resDate', '$startTime', '$endTime', 'ready')";
+            $sql = "INSERT INTO reservation (userID, $eqColumn$grantFrag, resDate, startTime, endTime, status)
+                VALUES ($userID, $eqID$grantVals, '$resDate', '$startTime', '$endTime', 'ready')";
         } else {
             $startDateTime = $this->conn->real_escape_string($resDate . ' ' . $startTime . ':00');
             $endDateTime = $this->conn->real_escape_string($resDate . ' ' . $endTime . ':00');
-            $sql = "INSERT INTO reservation (userID, $eqColumn, grantID, startTime, endTime, status)
-                VALUES ($userID, $eqID, $grantIDValue, '$startDateTime', '$endDateTime', 'ready')";
+            $sql = "INSERT INTO reservation (userID, $eqColumn$grantFrag, startTime, endTime, status)
+                VALUES ($userID, $eqID$grantVals, '$startDateTime', '$endDateTime', 'ready')";
         }
         $result = $this->conn->query($sql);
         if (!$result) {
@@ -434,5 +489,49 @@ class Reservation
             $value .= ':00';
         }
         return $this->conn->real_escape_string($value);
+    }
+
+    /** @return string|null column name grantID/grant_id or null if no grant column */
+    private function getReservationGrantColumn()
+    {
+        foreach (['grantID', 'grantid', 'grant_id'] as $c) {
+            if ($this->columnExists('reservation', $c)) {
+                return $c;
+            }
+        }
+        return null;
+    }
+
+    private function grantBelongsToUser($grantID, $userID)
+    {
+        $grantID = (int)$grantID;
+        $userID = (int)$userID;
+        $res = $this->conn->query("SELECT grantID FROM grants WHERE grantID = $grantID AND userID = $userID LIMIT 1");
+        return $res && $res->num_rows > 0;
+    }
+
+    private function firstGrantIdForUser($userID)
+    {
+        $userID = (int)$userID;
+        $res = $this->conn->query("SELECT grantID FROM grants WHERE userID = $userID ORDER BY grantID ASC LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            return (int)$row['grantID'];
+        }
+        return null;
+    }
+
+    /**
+     * @param int|string|null $requestedGrantId from admin form (optional)
+     * @return int|null grant id or null if none valid
+     */
+    private function resolveGrantIdForInsert($userID, $requestedGrantId)
+    {
+        if ($requestedGrantId !== null && $requestedGrantId !== '') {
+            $gid = (int)$requestedGrantId;
+            if ($this->grantBelongsToUser($gid, $userID)) {
+                return $gid;
+            }
+        }
+        return $this->firstGrantIdForUser($userID);
     }
 }
