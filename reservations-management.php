@@ -4,7 +4,53 @@ require_once "config/db.php";
 require_once "models/reservation.php";
 
 $reservation = new Reservation($conn);
+
+if (isset($_GET["delete_id"]) && $_GET["delete_id"] !== "") {
+  $reservation->removeReservation($_GET["delete_id"]);
+  header("Location: reservations-management.php");
+  exit();
+}
+
+if (
+  isset($_POST["user_id"]) &&
+  isset($_POST["start_time"]) &&
+  isset($_POST["end_time"]) &&
+  isset($_POST["equipment_id"]) &&
+  isset($_POST["status"])
+) {
+  $reservationID = $_POST["booking_id"] ?? "";
+  $userID = $_POST["user_id"];
+  $startTime = $_POST["start_time"];
+  $endTime = $_POST["end_time"];
+  $equipmentID = $_POST["equipment_id"];
+  $status = $_POST["status"];
+
+  if ($reservationID !== "") {
+    $reservation->updateReservationFromAdmin($reservationID, $userID, $startTime, $endTime, $equipmentID, $status);
+  } else {
+    $reservation->addReservationFromAdmin($userID, $startTime, $endTime, $equipmentID, $status);
+  }
+
+  header("Location: reservations-management.php");
+  exit();
+}
+
 $result = $reservation->getAll();
+$emergencyReports = $reservation->getEmergencyReports();
+$users = [];
+$usersResult = $conn->query("SELECT userID, fname, lname, username FROM users ORDER BY userID ASC");
+if ($usersResult) {
+  while ($userRow = $usersResult->fetch_assoc()) {
+    $fullName = trim(($userRow["fname"] ?? "") . " " . ($userRow["lname"] ?? ""));
+    if ($fullName === "") {
+      $fullName = $userRow["username"] ?? "Unknown User";
+    }
+    $users[] = [
+      "id" => $userRow["userID"],
+      "name" => $fullName
+    ];
+  }
+}
 
 ?>
 
@@ -52,13 +98,16 @@ $result = $reservation->getAll();
               </tr>
             </thead>
             <tbody>
-              <?php while ($row = $result->fetch_assoc()) { ?>
+              <?php while ($row = $result->fetch_assoc()) {
+                $reservationId = $row["bookingID"] ?? $row["resID"] ?? "";
+                $equipmentId = $row["equipmentID"] ?? $row["eqID"] ?? "";
+              ?>
                 <tr>
                   <td><?php echo $row["userID"]; ?></td>
-                  <td><?php echo $row["bookingID"]; ?></td>
+                  <td><?php echo htmlspecialchars($reservationId); ?></td>
                   <td><?php echo $row["startTime"]; ?></td>
                   <td><?php echo $row["endTime"]; ?></td>
-                  <td><?php echo $row["equipmentID"]; ?></td>
+                  <td><?php echo htmlspecialchars($equipmentId); ?></td>
                   <td>
                     <?php if ($row["status"] == "ongoing") { ?>
                       <span class="badge text-bg-success">ongoing</span>
@@ -73,16 +122,54 @@ $result = $reservation->getAll();
                       class="btn btn-sm btn-outline-primary edit-reservation-btn"
                       data-bs-toggle="modal"
                       data-bs-target="#reservationModal"
-                      data-booking-id="<?php echo htmlspecialchars($row["bookingID"]); ?>"
+                      data-booking-id="<?php echo htmlspecialchars($reservationId); ?>"
                       data-user-id="<?php echo htmlspecialchars($row["userID"]); ?>"
                       data-start-time="<?php echo htmlspecialchars($row["startTime"]); ?>"
                       data-end-time="<?php echo htmlspecialchars($row["endTime"]); ?>"
-                      data-equipment-id="<?php echo htmlspecialchars($row["equipmentID"]); ?>"
+                      data-equipment-id="<?php echo htmlspecialchars($equipmentId); ?>"
                       data-status="<?php echo htmlspecialchars($row["status"]); ?>">
                       Edit
                     </button>
-                    <a href="models/reservation.php?delete_id=<?php echo $row["bookingID"]; ?>" onclick="return confirm('Delete this reservation?')" class="btn btn-sm btn-outline-danger">Delete</a>
+                    <a href="reservations-management.php?delete_id=<?php echo urlencode((string)$reservationId); ?>" onclick="return confirm('Delete this reservation?')" class="btn btn-sm btn-outline-danger">Delete</a>
                   </td>
+                </tr>
+              <?php } ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-wrapper mt-4">
+        <h2 class="h5 mb-3">Emergency Reports</h2>
+        <div class="table-responsive">
+          <table class="table table-striped align-middle">
+            <thead>
+              <tr>
+                <th>Report ID</th>
+                <th>User ID</th>
+                <th>Reservation ID</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Message</th>
+                <th>Created At</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if ($emergencyReports && $emergencyReports->num_rows > 0) { ?>
+                <?php while ($reportRow = $emergencyReports->fetch_assoc()) { ?>
+                  <tr>
+                    <td><?php echo htmlspecialchars($reportRow["reportID"]); ?></td>
+                    <td><?php echo htmlspecialchars($reportRow["userID"]); ?></td>
+                    <td><?php echo htmlspecialchars($reportRow["resID"]); ?></td>
+                    <td><?php echo htmlspecialchars($reportRow["startTime"]); ?></td>
+                    <td><?php echo htmlspecialchars($reportRow["endTime"]); ?></td>
+                    <td><?php echo htmlspecialchars($reportRow["message"]); ?></td>
+                    <td><?php echo htmlspecialchars($reportRow["createdAt"]); ?></td>
+                  </tr>
+                <?php } ?>
+              <?php } else { ?>
+                <tr>
+                  <td colspan="7" class="text-secondary">No emergency reports yet.</td>
                 </tr>
               <?php } ?>
             </tbody>
@@ -105,7 +192,15 @@ $result = $reservation->getAll();
               <input type="hidden" name="booking_id" id="booking_id" />
 
               <div class="col-12">
-                <input name="user_id" id="user_id" class="form-control" placeholder="User ID" required />
+                <label for="user_id" class="form-label mb-1">User ID</label>
+                <select name="user_id" id="user_id" class="form-select" required>
+                  <option value="" disabled selected>Select User ID</option>
+                  <?php foreach ($users as $userOption) { ?>
+                    <option value="<?php echo htmlspecialchars($userOption["id"]); ?>">
+                      <?php echo htmlspecialchars($userOption["id"] . " - " . $userOption["name"]); ?>
+                    </option>
+                  <?php } ?>
+                </select>
               </div>
               <div class="col-12">
                 <label for="start_time" class="form-label mb-1">Start Time</label>

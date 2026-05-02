@@ -40,6 +40,8 @@ document.addEventListener("DOMContentLoaded", () => {
   bindProfileLinkClicks();
   loadMyGrantsForCurrentUser();
   bindGrantsPanelReload();
+  bindBookingPanelNavigation();
+  bindSessionPanelNavigation();
 });
 
 function getStoredUser() {
@@ -380,4 +382,40 @@ function bindGrantsPanelReload() {
       loadMyGrantsForCurrentUser();
     });
   }
+}
+
+function bindBookingPanelNavigation() {
+  const bookingLinks = document.querySelectorAll("[data-open-booking-modal]");
+  const bookingPanel = document.getElementById("booking-panel");
+  const bookingModalElement = document.getElementById("bookingModal");
+
+  if (!bookingLinks.length) return;
+
+  bookingLinks.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+
+      if (bookingPanel) {
+        bookingPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      if (bookingModalElement && window.bootstrap && window.bootstrap.Modal) {
+        const modal = window.bootstrap.Modal.getOrCreateInstance(bookingModalElement);
+        modal.show();
+      }
+    });
+  });
+}
+
+function bindSessionPanelNavigation() {
+  const sessionLinks = document.querySelectorAll('a[href="#session-panel"]');
+  const sessionPanel = document.getElementById("session-panel");
+  if (!sessionLinks.length || !sessionPanel) return;
+
+  sessionLinks.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      sessionPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 }
