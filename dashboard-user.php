@@ -9,6 +9,8 @@ if (!isset($_SESSION["user_id"])) {
 
 $currentUserId = $_SESSION["user_id"];
 
+$bookingError = $_SESSION['booking_error'] ?? null;
+unset($_SESSION['booking_error']);
 
 require_once "config/db.php";
 require_once "models/equipment.php";
@@ -18,6 +20,7 @@ $reservation = new Reservation($conn);
 $equipment = new Equipment($conn);
 
 $result = $equipment->getAll();
+$reservResult = $reservation->getAllForUser();
 ?>
 
 <!doctype html>
@@ -58,6 +61,10 @@ $result = $equipment->getAll();
         </aside>
 
         <section class="col-lg-9 col-xl-10">
+          <?php if (!empty($bookingError)) { ?>
+            <div class="alert alert-warning py-2 mb-3" role="alert"><?php echo htmlspecialchars($bookingError); ?></div>
+          <?php } ?>
+
           <div class="topbar p-3 mb-3 d-flex justify-content-between align-items-center">
             <div>
               <h1 class="h4 mb-1">Researcher Dashboard</h1>
@@ -113,22 +120,30 @@ $result = $equipment->getAll();
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td>B-501</td>
-                        <td>Electron Microscope</td>
-                        <td>2026-04-26</td>
-                        <td>09:00</td>
-                        <td>11:00</td>
-                        <td><span class="badge text-bg-success">ongoing</span></td>
-                      </tr>
-                      <tr>
-                        <td>B-615</td>
-                        <td>Spectrometer</td>
-                        <td>2026-04-28</td>
-                        <td>10:00</td>
-                        <td>12:00</td>
-                        <td><span class="badge text-bg-primary">ready</span></td>
-                      </tr>
+                      <?php while ($row = $reservResult->fetch_assoc()) { ?>
+                        <tr>
+                          <td><?php echo $row['resID']; ?></td>
+                          <td><?php
+                              $sql = "SELECT eqName FROM equipments where eqID = " .
+                                $row['eqID'];
+                              $res = $conn->query($sql);
+                              $resu = $res->fetch_assoc();
+                              echo $resu['eqName'];
+                              ?></td>
+                          <td><?php echo $row['resDate']; ?></td>
+                          <td><?php echo $row['startTime']; ?></td>
+                          <td><?php echo $row['endTime']; ?></td>
+                          <td> <?php if ($row['status'] == 'ongoing') { ?>
+                              <span class="badge text-bg-success">ongoing</span>
+                            <?php } else if ($row['status'] == 'terminated') { ?>
+                              <span class="badge text-bg-secondary">terminated</span>
+                            <?php } else { ?>
+                              <span class="badge text-bg-primary">ready</span>
+                            <?php } ?>
+                          </td>
+
+                        </tr>
+                      <?php } ?>
                     </tbody>
                   </table>
                 </div>
@@ -170,7 +185,7 @@ $result = $equipment->getAll();
 
   <div class="modal fade" id="bookingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-      <form id="bookingForm">
+      <form id="bookingForm" method="POST">
         <div class="modal-content">
           <div class="modal-header">
             <h2 class="modal-title fs-5">Book Equipment</h2>
@@ -189,7 +204,7 @@ $result = $equipment->getAll();
               </div>
               <div class="col-6">
                 <label class="form-label">Booking Date</label>
-                <input name="resDate" type="date" class="form-control" />
+                <input name="resDate" type="date" class="form-control" id="bookingDate" required />
               </div>
               <div class="col-6">
                 <label class="form-label">Required Qualification</label>
@@ -208,6 +223,7 @@ $result = $equipment->getAll();
           <div class="modal-footer">
             <button class="btn btn-outline-secondary btn-outline-soft" data-bs-dismiss="modal">Cancel</button>
             <button type="submit" class="btn btn-gradient" id="confirmBookingBtn">Confirm Booking</button>
+            <input id="priceLabel" name="price" hidden></input>
           </div>
         </div>
       </form>
@@ -216,11 +232,63 @@ $result = $equipment->getAll();
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+    const bookingForm = document.getElementById("bookingForm");
+    const bookingDate = document.getElementById("bookingDate");
     const bookingStartTime = document.getElementById("bookingStartTime");
     const bookingEndTime = document.getElementById("bookingEndTime");
     const confirmBookingBtn = document.getElementById("confirmBookingBtn");
+    const bookingModal = document.getElementById("bookingModal");
     const hourlyBookingRate = 15;
     const defaultConfirmLabel = "Confirm Booking";
+    const priceLabel = document.getElementById("priceLabel");
+
+    function todayStr() {
+      const n = new Date();
+      return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-" + String(n.getDate()).padStart(2, "0");
+    }
+
+    function syncBookingMins() {
+      bookingDate.min = todayStr();
+      if (bookingDate.value === todayStr()) {
+        const n = new Date();
+        bookingStartTime.min = String(n.getHours()).padStart(2, "0") + ":" + String(n.getMinutes()).padStart(2, "0");
+      } else {
+        bookingStartTime.removeAttribute("min");
+      }
+    }
+
+    bookingDate.addEventListener("change", syncBookingMins);
+    bookingModal.addEventListener("shown.bs.modal", syncBookingMins);
+    syncBookingMins();
+
+    bookingForm.addEventListener("submit", function(e) {
+      const d = bookingDate.value;
+      const t0 = bookingStartTime.value;
+      const t1 = bookingEndTime.value;
+      const now = new Date();
+      if (!d || !t0 || !t1) return;
+      if (d < todayStr()) {
+        e.preventDefault();
+        alert("Choose today or a future date.");
+        return;
+      }
+      const [sh, sm] = t0.split(":").map(Number);
+      const [eh, em] = t1.split(":").map(Number);
+      const startM = sh * 60 + sm;
+      const endM = eh * 60 + em;
+      if (endM <= startM) {
+        e.preventDefault();
+        alert("End time must be after start time.");
+        return;
+      }
+      if (d === todayStr()) {
+        const curM = now.getHours() * 60 + now.getMinutes();
+        if (startM < curM) {
+          e.preventDefault();
+          alert("Start time cannot be in the past.");
+        }
+      }
+    });
 
     function updateBookingPriceLabel() {
       const startValue = bookingStartTime.value;
@@ -246,6 +314,7 @@ $result = $equipment->getAll();
       const bookedHours = Math.ceil(durationMinutes / 60);
       const totalPrice = bookedHours * hourlyBookingRate;
       confirmBookingBtn.textContent = `${totalPrice}$ - ${defaultConfirmLabel}`;
+      priceLabel.value = totalPrice;
     }
 
     bookingStartTime.addEventListener("input", updateBookingPriceLabel);

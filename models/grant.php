@@ -57,12 +57,10 @@ class Grant
     public function __construct($db)
     {
         $this->conn = $db;
-        $this->ensureTableExists();
     }
 
     public function getAll()
     {
-        $this->ensureTableExists();
         $sql = "SELECT
                 grantID AS grantID,
                 userID AS userID,
@@ -76,7 +74,6 @@ class Grant
 
     public function addGrant($userID, $balance, $expiryDate, $grantName)
     {
-        $this->ensureTableExists();
         $newGrantID = $this->getNextGrantID();
         $sql = "INSERT INTO grants (grantID, userID, balance, expiryDate, name)
                 VALUES ('$newGrantID', '$userID', '$balance', '$expiryDate', '$grantName')";
@@ -85,14 +82,12 @@ class Grant
 
     public function removeGrant($grantID)
     {
-        $this->ensureTableExists();
         $sql = "DELETE FROM grants WHERE grantID = '$grantID'";
         return $this->conn->query($sql);
     }
 
     public function updateGrant($grantID, $userID, $balance, $expiryDate, $grantName)
     {
-        $this->ensureTableExists();
         $sql = "UPDATE grants SET
                 userID = '$userID',
                 balance = '$balance',
@@ -117,7 +112,7 @@ class Grant
 
     private function getNextGrantID()
     {
-        $this->ensureTableExists();
+        // $this->ensureTableExists();
         $sql = "SELECT MAX(grantID) AS maxID FROM grants";
         $result = $this->conn->query($sql);
 
@@ -128,7 +123,7 @@ class Grant
         return 1;
     }
 
-    private function ensureTableExists()
+    /* private function ensureTableExists()
     {
         $sql = "CREATE TABLE IF NOT EXISTS grants (
                 grantID int(11) NOT NULL,
@@ -140,5 +135,5 @@ class Grant
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
         $this->conn->query($sql);
-    }
+    } */
 }

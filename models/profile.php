@@ -98,6 +98,7 @@ class Profile
         return null;
     }
 
+
     public function updateProfileInfo($userID, $firstName, $lastName, $phoneNo, $role)
     {
         $sql = "UPDATE users SET

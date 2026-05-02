@@ -114,7 +114,7 @@ class User
     }
     public function checkBalance()
     {
-        return $this->conn->query("SELECT balance FROM grants WHERE 
-        userID = " . (int)$_SESSION["user_id"]);
+        return (float)(($this->conn->query("SELECT balance FROM grants WHERE 
+        userID = " . (int)$_SESSION["user_id"]))->fetch_assoc()["balance"]);
     }
 }
