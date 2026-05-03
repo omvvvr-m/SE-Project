@@ -1,5 +1,7 @@
 <?php
 
+date_default_timezone_set('Africa/Cairo');
+
 require_once __DIR__ . "/../models/user.php";
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -197,42 +199,35 @@ class Reservation
     {
         $userID = (int)$userID;
         $hasResDate = $this->columnExists('reservation', 'resDate');
-
-        $timeResult = $this->conn->query("SELECT NOW() as now");
-        if (!$timeResult) {
-            return;
-        }
-
-        $timeRow = $timeResult->fetch_assoc();
-        $nowSql = $timeRow['now'];
+        $nowSql = $this->conn->real_escape_string(date('Y-m-d H:i:s'));
 
         if ($hasResDate) {
             $this->conn->query("UPDATE reservation
-            SET status = 'ready'
-            WHERE userID = $userID
-              AND status = 'ongoing'
-              AND CONCAT(resDate, ' ', startTime) > '$nowSql'");
-
+                SET status = 'ready'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND STR_TO_DATE(CONCAT(resDate, ' ', startTime), '%Y-%m-%d %H:%i:%s') > '$nowSql'");
             $this->conn->query("UPDATE reservation
-            SET status = 'terminated'
-            WHERE userID = $userID
-              AND status = 'ongoing'
-              AND CONCAT(resDate, ' ', endTime) < '$nowSql'");
+                SET status = 'terminated'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND STR_TO_DATE(CONCAT(resDate, ' ', endTime), '%Y-%m-%d %H:%i:%s') < '$nowSql'");
         } else {
             $this->conn->query("UPDATE reservation
-            SET status = 'ready'
-            WHERE userID = $userID
-              AND status = 'ongoing'
-              AND startTime > '$nowSql'");
-
+                SET status = 'ready'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND startTime > '$nowSql'");
             $this->conn->query("UPDATE reservation
-            SET status = 'terminated'
-            WHERE userID = $userID
-              AND status = 'ongoing'
-              AND endTime < '$nowSql'");
+                SET status = 'terminated'
+                WHERE userID = $userID
+                  AND status = 'ongoing'
+                  AND endTime < '$nowSql'");
         }
     }
 
+
+    public function robloxPlay() {}
     public function checkConflicts($eqID, $resDate, $startTime, $endTime)
     {
         $eqID = (int)$eqID;
@@ -281,15 +276,18 @@ class Reservation
     public function getActiveSessionForUser($userID)
     {
         $userID = (int)$userID;
+
         $idColumn = $this->getReservationIdColumn();
         $eqColumn = $this->getEquipmentColumn();
         $hasResDate = $this->columnExists('reservation', 'resDate');
 
-        // ✅ Get correct time from MySQL (fix DST issue)
+        // ✅ ALWAYS use MySQL time (fixes DST issue)
         $timeResult = $this->conn->query("SELECT NOW() as now");
         if (!$timeResult) {
+            echo $this->conn->error;
             return null;
         }
+
         $timeRow = $timeResult->fetch_assoc();
         $nowSql = $timeRow['now'];
         $now = new DateTime($nowSql);
@@ -298,14 +296,15 @@ class Reservation
         // 1. CHECK ONGOING
         // =========================
         $sql = "SELECT r.*, e.eqName
-            FROM reservation r
-            LEFT JOIN equipments e ON e.eqID = r.$eqColumn
-            WHERE r.userID = $userID AND r.status = 'ongoing'
-            ORDER BY r.$idColumn DESC
-            LIMIT 1";
+                FROM reservation r
+                LEFT JOIN equipments e ON e.eqID = r.$eqColumn
+                WHERE r.userID = $userID AND r.status = 'ongoing'
+                ORDER BY r.$idColumn DESC
+                LIMIT 1";
 
         $result = $this->conn->query($sql);
         if (!$result) {
+            echo $this->conn->error;
             return null;
         }
 
@@ -324,7 +323,7 @@ class Reservation
                 $this->conn->query("UPDATE reservation SET status = 'terminated' WHERE $idColumn = $rid");
                 $active = null;
             } else {
-                return $active;
+                return $active; // ✅ valid ongoing
             }
         }
 
@@ -333,28 +332,29 @@ class Reservation
         // =========================
         if ($hasResDate) {
             $readySql = "SELECT r.*, e.eqName
-                     FROM reservation r
-                     LEFT JOIN equipments e ON e.eqID = r.$eqColumn
-                     WHERE r.userID = $userID
-                       AND r.status = 'ready'
-                       AND CONCAT(r.resDate, ' ', r.startTime) <= '$nowSql'
-                       AND CONCAT(r.resDate, ' ', r.endTime) >= '$nowSql'
-                     ORDER BY CONCAT(r.resDate, ' ', r.startTime) ASC
-                     LIMIT 1";
+                         FROM reservation r
+                         LEFT JOIN equipments e ON e.eqID = r.$eqColumn
+                         WHERE r.userID = $userID
+                           AND r.status = 'ready'
+                           AND CONCAT(r.resDate, ' ', r.startTime) <= '$nowSql'
+                           AND CONCAT(r.resDate, ' ', r.endTime) >= '$nowSql'
+                         ORDER BY CONCAT(r.resDate, ' ', r.startTime) ASC
+                         LIMIT 1";
         } else {
             $readySql = "SELECT r.*, e.eqName
-                     FROM reservation r
-                     LEFT JOIN equipments e ON e.eqID = r.$eqColumn
-                     WHERE r.userID = $userID
-                       AND r.status = 'ready'
-                       AND r.startTime <= '$nowSql'
-                       AND r.endTime >= '$nowSql'
-                     ORDER BY r.startTime ASC
-                     LIMIT 1";
+                         FROM reservation r
+                         LEFT JOIN equipments e ON e.eqID = r.$eqColumn
+                         WHERE r.userID = $userID
+                           AND r.status = 'ready'
+                           AND r.startTime <= '$nowSql'
+                           AND r.endTime >= '$nowSql'
+                         ORDER BY r.startTime ASC
+                         LIMIT 1";
         }
 
         $readyResult = $this->conn->query($readySql);
         if (!$readyResult) {
+            echo $this->conn->error;
             return null;
         }
 
