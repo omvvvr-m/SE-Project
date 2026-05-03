@@ -1,5 +1,6 @@
 <?php
 include("../config/db.php");
+require_once __DIR__ . "/../includes/audit.php";
 header("Content-Type: application/json");
 $firstName = $_POST['firstName'];
 $lastName = $_POST['lastName'];
@@ -12,6 +13,12 @@ values('$firstName','$lastName', '$username', '$password', '$phoneNumber', 'rese
 $res = $conn->query($SQL);
 
 if ($res) {
+    audit_init($conn);
+    audit_event($conn, "auth.register", [
+        "username" => (string)$username,
+        "firstName" => (string)$firstName,
+        "lastName" => (string)$lastName
+    ]);
     echo json_encode(["status" => "success"]);
 } else {
     echo json_encode([

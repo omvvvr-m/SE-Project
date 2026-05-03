@@ -1,9 +1,12 @@
 <?php
 
 require_once __DIR__ . "/../config/db.php";
+require_once __DIR__ . "/../includes/audit.php";
 $grantModel = new Grant($conn);
 
 if (isset($_GET["delete_id"])) {
+    audit_init($conn);
+    audit_event($conn, "grant.delete", ["grantID" => (int)$_GET["delete_id"]]);
     $grantModel->removeGrant($_GET["delete_id"]);
     header("Location: ../grants-management.php");
     exit();
@@ -37,8 +40,21 @@ if (
 
     try {
         if (isset($_POST["grant_id"]) && $_POST["grant_id"] !== "") {
+            audit_init($conn);
+            audit_event($conn, "grant.update", [
+                "grantID" => (int)$_POST["grant_id"],
+                "userID" => (int)$userID,
+                "balance" => (float)$balance,
+                "expiryDate" => (string)$expiryDate
+            ]);
             $grantModel->updateGrant((int)$_POST["grant_id"], $userID, $balance, $expiryDate, $grantName);
         } else {
+            audit_init($conn);
+            audit_event($conn, "grant.create", [
+                "userID" => (int)$userID,
+                "balance" => (float)$balance,
+                "expiryDate" => (string)$expiryDate
+            ]);
             $grantModel->addGrant($userID, $balance, $expiryDate, $grantName);
         }
     } catch (mysqli_sql_exception $e) {

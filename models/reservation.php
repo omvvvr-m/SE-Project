@@ -1,6 +1,10 @@
 <?php
 
 require_once __DIR__ . "/../models/user.php";
+require_once __DIR__ . "/../includes/audit.php";
+require_once __DIR__ . "/../includes/booking_rate.php";
+require_once __DIR__ . "/../includes/training.php";
+require_once __DIR__ . "/../includes/safety.php";
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -53,16 +57,17 @@ if (
     isset($_POST['eqID']) &&
     isset($_POST['resDate']) &&
     isset($_POST['startTime']) &&
-    isset($_POST['endTime']) &&
-    isset($_POST['price'])
+    isset($_POST['endTime'])
 ) {
+    // $conn comes from models/user.php -> config/db.php include chain
+    audit_init($conn);
     $userID = $_SESSION['user_id'];
     $grantID = $_SESSION["grant_id"] ?? null;
     $eqID =  $_POST['eqID'];
     $resDate =  $_POST['resDate'];
     $startTime =  $_POST['startTime'];
     $endTime =  $_POST['endTime'];
-    $price =  $_POST['price'];
+    $bookingAgreement = isset($_POST['booking_agreement']) && $_POST['booking_agreement'] === '1';
     $bookingErr = booking_validation_error($resDate, $startTime, $endTime);
     if ($bookingErr !== null) {
         $_SESSION['booking_error'] = $bookingErr;
@@ -70,11 +75,58 @@ if (
         exit();
     }
 
+    $currentHourlyRate = booking_get_effective_hourly_rate($conn, (int)$userID);
+    $startMinutes = reservation_minutes_from_time((string)$startTime);
+    $endMinutes = reservation_minutes_from_time((string)$endTime);
+    $durationMinutes = max(0, $endMinutes - $startMinutes);
+    $bookedHours = (int)ceil($durationMinutes / 60);
+    $price = (float)round($bookedHours * $currentHourlyRate, 2);
+
+    $safetyFee = 0.0;
+    $safetyRequirement = safety_get_for_equipment($conn, (int)$eqID);
+    $needsSafety = !empty($safetyRequirement["is_required"]);
+    if ($needsSafety) {
+        $safetyConfirmed = isset($_POST['safety_confirm']) && $_POST['safety_confirm'] === '1';
+        if (!$safetyConfirmed) {
+            $_SESSION['booking_error'] = "You must confirm mandatory safety requirement for this equipment before booking.";
+            header('Location: dashboard-user.php');
+            exit();
+        }
+        $safetyFee = 10.0;
+        $price = (float)round($price + $safetyFee, 2);
+    }
+    if (!$bookingAgreement) {
+        $_SESSION['booking_error'] = "You must agree to the booking safety terms before booking.";
+        header('Location: dashboard-user.php');
+        exit();
+    }
+
+    audit_event($conn, "reservation.create", [
+        "userID" => (int)$userID,
+        "eqID" => (int)$eqID,
+        "resDate" => (string)$resDate,
+        "startTime" => (string)$startTime,
+        "endTime" => (string)$endTime,
+        "price" => (float)$price,
+        "hourlyRate" => (float)$currentHourlyRate,
+        "safetyFee" => (float)$safetyFee
+    ]);
     if (!$reservation->createBooking($userID, $eqID, $grantID, $resDate, $startTime, $endTime, $price)) {
         $_SESSION['booking_error'] = $reservation->errorMsg;
     }
     header('Location: dashboard-user.php');
     exit();
+}
+
+function reservation_minutes_from_time(string $time): int
+{
+    $parts = explode(":", $time);
+    if (count($parts) < 2) {
+        return 0;
+    }
+    $h = (int)$parts[0];
+    $m = (int)$parts[1];
+    return ($h * 60) + $m;
 }
 
 //reamining is setting the grandid 
@@ -404,6 +456,25 @@ class Reservation
                 VALUES ($resID, $userID, '$safeStart', '$safeEnd', '$safeMessage')";
         return $this->conn->query($sql);
     }
+    public function createSessionSupportRequest($resID, $userID, $message)
+    {
+        $this->conn->query("CREATE TABLE IF NOT EXISTS session_support_requests (
+            requestID INT NOT NULL AUTO_INCREMENT,
+            resID INT NOT NULL,
+            userID INT NOT NULL,
+            message TEXT NOT NULL,
+            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (requestID)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+        $resID = (int)$resID;
+        $userID = (int)$userID;
+        $safeMessage = $this->conn->real_escape_string($message);
+
+        $sql = "INSERT INTO session_support_requests (resID, userID, message)
+                VALUES ($resID, $userID, '$safeMessage')";
+        return $this->conn->query($sql);
+    }
     public function getEmergencyReports()
     {
         $this->conn->query("CREATE TABLE IF NOT EXISTS emergency_reports (
@@ -416,13 +487,58 @@ class Reservation
             createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (reportID)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
-        return $this->conn->query("SELECT * FROM emergency_reports ORDER BY reportID DESC");
+        return $this->conn->query(
+            "SELECT er.reportID, er.userID, er.resID, er.startTime, er.endTime, er.message, er.createdAt,
+                    u.fname, u.lname, u.username
+             FROM emergency_reports er
+             LEFT JOIN users u ON u.userID = er.userID
+             ORDER BY er.reportID DESC"
+        );
+    }
+    public function getSessionSupportRequests()
+    {
+        $this->conn->query("CREATE TABLE IF NOT EXISTS session_support_requests (
+            requestID INT NOT NULL AUTO_INCREMENT,
+            resID INT NOT NULL,
+            userID INT NOT NULL,
+            message TEXT NOT NULL,
+            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (requestID)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+        return $this->conn->query(
+            "SELECT sr.requestID, sr.userID, sr.resID, sr.message, sr.createdAt,
+                    u.fname, u.lname, u.username
+             FROM session_support_requests sr
+             LEFT JOIN users u ON u.userID = sr.userID
+             ORDER BY sr.requestID DESC"
+        );
     }
     public function createBooking($userID, $eqID, $grantID, $resDate, $startTime, $endTime, $price)
     {
         $userID = (int)$userID;
         $eqID = (int)$eqID;
-        $price = (int)$price;
+        $price = (float)$price;
+        $eqStatusRes = $this->conn->query("SELECT status FROM equipments WHERE eqID = $eqID LIMIT 1");
+        if (!$eqStatusRes || !($eqStatusRow = $eqStatusRes->fetch_assoc())) {
+            $this->errorMsg = "Selected equipment was not found.";
+            return false;
+        }
+        $eqStatus = strtolower(trim((string)($eqStatusRow["status"] ?? "")));
+        if ($eqStatus !== "ready") {
+            $this->errorMsg = "This equipment is under maintenance and cannot be booked now.";
+            return false;
+        }
+        if (!training_user_has_access($this->conn, $userID, $eqID)) {
+            $trainingTitle = "";
+            $titleRes = $this->conn->query("SELECT training_title FROM equipment_training_requirements WHERE eqID = $eqID LIMIT 1");
+            if ($titleRes && $titleRow = $titleRes->fetch_assoc()) {
+                $trainingTitle = trim((string)($titleRow["training_title"] ?? ""));
+            }
+            $this->errorMsg = $trainingTitle !== ""
+                ? ("You cannot book this equipment until you pass training: " . $trainingTitle)
+                : "You cannot book this equipment until you pass the required training.";
+            return false;
+        }
         $grantColBooking = $this->getReservationGrantColumn();
         $resolvedGrantId = null;
         if ($grantColBooking !== null) {
@@ -444,7 +560,7 @@ class Reservation
             $this->errorMsg = "There's a booking already in this timezone.";
             return false;
         }
-        if ($this->user->deduct($price) != 0) {
+        if ($this->user->deduct($price, $resolvedGrantId, $userID) != 0) {
             $this->errorMsg = "Insufficient Funds";
             return false;
         }
@@ -470,9 +586,13 @@ class Reservation
 
     public function removeReservationForUser($reservationID, $userID)
     {
-
         $reservationID = (int)$reservationID;
-        $sql = "DELETE FROM reservation WHERE resID = $reservationID AND userID = $userID AND status != 'ongoing'";
+        $userID = (int)$userID;
+        $idColumn = $this->getReservationIdColumn();
+        $sql = "DELETE FROM reservation
+                WHERE $idColumn = $reservationID
+                  AND userID = $userID
+                  AND status != 'ongoing'";
         $result = $this->conn->query($sql);
         if (!$result) {
             $this->errorMsg = "Could not delete reservation, Make sure it's not ongoing and try again";

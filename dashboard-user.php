@@ -13,12 +13,22 @@ $bookingError = $_SESSION['booking_error'] ?? null;
 unset($_SESSION['booking_error']);
 
 require_once "config/db.php";
+require_once __DIR__ . "/includes/audit.php";
+require_once __DIR__ . "/includes/booking_rate.php";
+require_once __DIR__ . "/includes/training.php";
+require_once __DIR__ . "/includes/safety.php";
 require_once "models/equipment.php";
 require_once "models/reservation.php";
 
 $reservation = new Reservation($conn);
 $equipment = new Equipment($conn);
+$hourlyBookingRate = booking_get_effective_hourly_rate($conn, (int)$currentUserId);
 $reservation->normalizeStatusesForUser((int)$currentUserId);
+training_ensure_tables($conn);
+$requiredTrainingMap = training_get_required_map($conn);
+$passedTrainingMap = training_get_user_passed_map($conn, (int)$currentUserId);
+safety_ensure_table($conn);
+$safetyMap = safety_get_map($conn);
 
 $sessionActionMsg = $_SESSION['session_action_msg'] ?? null;
 unset($_SESSION['session_action_msg']);
@@ -28,6 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['session_action'])) {
   $resID = isset($_POST['res_id']) ? (int)$_POST['res_id'] : 0;
 
   if ($action === 'terminate' && $resID > 0) {
+    audit_init($conn);
+    audit_event($conn, "session.terminate", [
+      "resID" => (int)$resID,
+      "userID" => (int)$currentUserId
+    ]);
     $reservation->terminateSession($resID, (int)$currentUserId);
     $_SESSION['session_action_msg'] = 'Session terminated successfully.';
   } elseif ($action === 'emergency' && $resID > 0) {
@@ -37,13 +52,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['session_action'])) {
     if ($message === '') {
       $_SESSION['session_action_msg'] = 'Please write the emergency issue details.';
     } else {
+      audit_init($conn);
+      audit_event($conn, "session.emergency_report", [
+        "resID" => (int)$resID,
+        "userID" => (int)$currentUserId,
+        "message" => mb_substr((string)$message, 0, 200)
+      ]);
       $reservation->createEmergencyReport($resID, (int)$currentUserId, $message, $startTime, $endTime);
       $reservation->terminateSession($resID, (int)$currentUserId);
       $_SESSION['session_action_msg'] = 'Emergency report sent to admin and session terminated.';
     }
+  } elseif ($action === 'need_help' && $resID > 0) {
+    $message = trim($_POST['help_message'] ?? '');
+    if ($message === '') {
+      $_SESSION['session_action_msg'] = 'Please write what help you need.';
+    } else {
+      audit_init($conn);
+      audit_event($conn, "session.supervision_request", [
+        "resID" => (int)$resID,
+        "userID" => (int)$currentUserId,
+        "message" => mb_substr((string)$message, 0, 200)
+      ]);
+      $reservation->createSessionSupportRequest($resID, (int)$currentUserId, $message);
+      $_SESSION['session_action_msg'] = 'Support request sent to admin successfully.';
+    }
+  } elseif ($action === 'heartbeat_timeout' && $resID > 0) {
+    audit_init($conn);
+    audit_event($conn, "session.auto_terminate_inactive", [
+      "resID" => (int)$resID,
+      "userID" => (int)$currentUserId
+    ]);
+    $reservation->terminateSession($resID, (int)$currentUserId);
+    $_SESSION['session_action_msg'] = 'Session terminated due to inactivity (no response to presence check).';
   }
 
   header("Location: dashboard-user.php#session-panel");
+  exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['booking_action']) && $_POST['booking_action'] === 'delete') {
+  $bookingID = isset($_POST['booking_id']) ? (int)$_POST['booking_id'] : 0;
+  if ($bookingID > 0) {
+    if ($reservation->removeReservationForUser($bookingID, (int)$currentUserId)) {
+      $_SESSION['session_action_msg'] = 'Booking deleted successfully.';
+    } else {
+      $_SESSION['booking_error'] = $reservation->errorMsg ?: 'Could not delete booking.';
+    }
+  } else {
+    $_SESSION['booking_error'] = 'Invalid booking id.';
+  }
+  header("Location: dashboard-user.php#booking-panel");
   exit;
 }
 
@@ -194,6 +252,7 @@ if ($activeSession) {
               <a class="nav-link" href="#booking-panel" data-open-booking-modal><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
               <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#sessionInfoModal"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
               <a class="nav-link" href="my-grants.php"><i class="bi bi-cash-coin me-2"></i>Grants Panel</a>
+              <a class="nav-link" href="my-trainings.php"><i class="bi bi-journal-check me-2"></i>My Trainings</a>
               <a class="nav-link" href="login.html"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
             </nav>
           </div>
@@ -244,6 +303,7 @@ if ($activeSession) {
               <div class="card-soft p-3">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                   <h2 class="panel-title mb-0">Booking Panel</h2>
+                  <div class="small text-secondary me-2">Hourly Rate: $<?php echo htmlspecialchars(number_format((float)$hourlyBookingRate, 2)); ?></div>
                   <button class="btn btn-gradient btn-sm px-3" data-bs-toggle="modal"
                     data-bs-target="#bookingModal">Book Equipment</button>
                 </div>
@@ -290,7 +350,11 @@ if ($activeSession) {
                             <?php if ($row['status'] === 'ongoing') { ?>
                               <span class="small text-secondary" title="Terminate the session in the Session Panel first">—</span>
                             <?php } elseif ($bookingRowId > 0) { ?>
-                              <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirm('Delete this reservation?');">Delete</button>
+                              <form method="POST" class="d-inline m-0" onsubmit="return confirm('Are you sure you want to delete this booking?');">
+                                <input type="hidden" name="booking_action" value="delete" />
+                                <input type="hidden" name="booking_id" value="<?php echo htmlspecialchars((string)$bookingRowId); ?>" />
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                              </form>
                             <?php } ?>
                           </td>
 
@@ -307,7 +371,9 @@ if ($activeSession) {
                 <h2 class="panel-title">Session Panel</h2>
                 <?php if ($activeSession) { ?>
                   <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-                  <p class="mb-1"><span class="muted-label">Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+                  <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+                  <p class="mb-1"><span class="muted-label">Keep Session Alive Check In:</span> <span class="js-heartbeat-next">02:00</span></p>
+                  <p class="mb-1"><span class="muted-label">Response Countdown:</span> <span class="js-heartbeat-response">--:--</span></p>
                   <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
                   <p class="mb-3"><span class="muted-label">End Time:</span> <?php echo htmlspecialchars($activeSession['endTime']); ?></p>
 
@@ -317,9 +383,22 @@ if ($activeSession) {
                       <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
                       <button type="submit" class="btn btn-outline-danger btn-sm">Terminate</button>
                     </form>
+                    <button class="btn btn-warning btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#needHelpBox" aria-expanded="false" aria-controls="needHelpBox">
+                      Need Help
+                    </button>
                     <button class="btn btn-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#emergencyBox" aria-expanded="false" aria-controls="emergencyBox">
                       Emergency
                     </button>
+                  </div>
+
+                  <div class="collapse mb-2" id="needHelpBox">
+                    <form method="POST">
+                      <input type="hidden" name="session_action" value="need_help" />
+                      <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
+                      <label for="help_message" class="form-label mb-1">What help do you need?</label>
+                      <textarea id="help_message" name="help_message" class="form-control mb-2" rows="3" placeholder="Describe your request..." required></textarea>
+                      <button type="submit" class="btn btn-warning btn-sm">Send Help Request</button>
+                    </form>
                   </div>
 
                   <div class="collapse" id="emergencyBox">
@@ -370,7 +449,36 @@ if ($activeSession) {
 
                 <select name="eqID" class="form-select">
                   <?php while ($row = $result->fetch_assoc()) { ?>
-                    <option><?php echo $row['eqID'] . " - " . $row['eqName']  ?></option>
+                    <?php if (($row['status'] ?? '') !== 'ready') continue; ?>
+                    <?php
+                    $eqId = (int)$row['eqID'];
+                    $requiresTraining = array_key_exists($eqId, $requiredTrainingMap);
+                    $passedTraining = !empty($passedTrainingMap[$eqId]);
+                    $isBlocked = $requiresTraining && !$passedTraining;
+                    $trainingTitle = trim((string)($requiredTrainingMap[$eqId] ?? ""));
+                    $trainingLabel = $trainingTitle !== "" ? $trainingTitle : "required training";
+                    $safetyInfo = $safetyMap[$eqId] ?? ["is_required" => false, "reason" => ""];
+                    $needsSafety = !empty($safetyInfo["is_required"]);
+                    $safetyReason = trim((string)($safetyInfo["reason"] ?? ""));
+                    ?>
+                    <option
+                      <?php echo $isBlocked ? "disabled" : ""; ?>
+                      data-safety-required="<?php echo $needsSafety ? "1" : "0"; ?>"
+                      data-safety-reason="<?php echo htmlspecialchars($safetyReason); ?>">
+                      <?php
+                      echo $row['eqID'] . " - " . $row['eqName'];
+                      $desc = trim((string)($row['eqDescription'] ?? ''));
+                      if ($desc !== '') {
+                        echo " | " . $desc;
+                      }
+                      if ($isBlocked) {
+                        echo " (Cannot book - requires " . $trainingLabel . ")";
+                      }
+                      if ($needsSafety) {
+                        echo " (Safety required +$10)";
+                      }
+                      ?>
+                    </option>
                   <?php } ?>
                 </select>
               </div>
@@ -389,6 +497,26 @@ if ($activeSession) {
               <div class="col-6">
                 <label class="form-label">End Time</label>
                 <input type="time" name="endTime" class="form-control" id="bookingEndTime" />
+              </div>
+              <div class="col-12">
+                <div id="safetyRequirementBox" class="alert alert-warning py-2 d-none mb-0">
+                  <div class="fw-semibold">Safety requirement is mandatory for this equipment.</div>
+                  <div class="small mb-2" id="safetyRequirementReason"></div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="safetyConfirmCheckbox" name="safety_confirm" value="1">
+                    <label class="form-check-label" for="safetyConfirmCheckbox">
+                      I confirm that I have completed and will follow required safety procedure for this equipment (+$10).
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="bookingAgreementCheckbox" name="booking_agreement" value="1" required>
+                  <label class="form-check-label" for="bookingAgreementCheckbox">
+                    By agree, you must be careful and handle equipment safely. We are not responsible for any harm or damage caused by your incorrect usage.
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -411,7 +539,9 @@ if ($activeSession) {
         <div class="modal-body">
           <?php if ($activeSession) { ?>
             <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-            <p class="mb-1"><span class="muted-label">Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+            <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+            <p class="mb-1"><span class="muted-label">Keep Session Alive Check In:</span> <span class="js-heartbeat-next">02:00</span></p>
+            <p class="mb-1"><span class="muted-label">Response Countdown:</span> <span class="js-heartbeat-response">--:--</span></p>
             <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
             <p class="mb-3"><span class="muted-label">End Time:</span> <?php echo htmlspecialchars($activeSession['endTime']); ?></p>
 
@@ -421,9 +551,22 @@ if ($activeSession) {
                 <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
                 <button type="submit" class="btn btn-outline-danger btn-sm">Terminate</button>
               </form>
+              <button class="btn btn-warning btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#modalNeedHelpBox" aria-expanded="false" aria-controls="modalNeedHelpBox">
+                Need Help
+              </button>
               <button class="btn btn-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#modalEmergencyBox" aria-expanded="false" aria-controls="modalEmergencyBox">
                 Emergency
               </button>
+            </div>
+
+            <div class="collapse mb-2" id="modalNeedHelpBox">
+              <form method="POST">
+                <input type="hidden" name="session_action" value="need_help" />
+                <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
+                <label for="modal_help_message" class="form-label mb-1">What help do you need?</label>
+                <textarea id="modal_help_message" name="help_message" class="form-control mb-2" rows="3" placeholder="Describe your request..." required></textarea>
+                <button type="submit" class="btn btn-warning btn-sm">Send Help Request</button>
+              </form>
             </div>
 
             <div class="collapse" id="modalEmergencyBox">
@@ -447,6 +590,9 @@ if ($activeSession) {
 
   <script type="application/json" id="session-countdown-data">
     <?php echo json_encode(['endMs' => $sessionEndTimestampMs, 'serverNowMs' => $serverNowTimestampMs]); ?>
+  </script>
+  <script type="application/json" id="session-heartbeat-data">
+    <?php echo json_encode(['active' => (bool)$activeSession, 'resID' => $sessionReservationId]); ?>
   </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
@@ -494,15 +640,166 @@ if ($activeSession) {
     })();
   </script>
   <script>
+    (function() {
+      const hbEl = document.getElementById("session-heartbeat-data");
+      if (!hbEl) return;
+      let hbCfg = {};
+      try {
+        hbCfg = JSON.parse(hbEl.textContent || "{}");
+      } catch (e) {
+        return;
+      }
+      if (!hbCfg.active || !hbCfg.resID) return;
+
+      const CHECK_INTERVAL_MS = 2 * 60 * 1000; // every 2 minutes
+      const RESPONSE_WINDOW_MS = 60 * 1000; // user has 1 minute
+      let responseTimer = null;
+      let nextCheckTimer = null;
+      let nextCheckRemainingMs = CHECK_INTERVAL_MS;
+      let responseRemainingMs = 0;
+
+      function formatMmSs(ms) {
+        const total = Math.max(0, Math.floor(ms / 1000));
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+      }
+
+      function setTextForAll(selector, value) {
+        document.querySelectorAll(selector).forEach((el) => {
+          el.textContent = value;
+        });
+      }
+
+      function ensureHeartbeatModal() {
+        let modalEl = document.getElementById("heartbeatModal");
+        if (modalEl) return modalEl;
+        modalEl = document.createElement("div");
+        modalEl.className = "modal fade";
+        modalEl.id = "heartbeatModal";
+        modalEl.tabIndex = -1;
+        modalEl.setAttribute("data-bs-backdrop", "static");
+        modalEl.setAttribute("data-bs-keyboard", "false");
+        modalEl.innerHTML = `
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h2 class="modal-title fs-5">Session Presence Check</h2>
+              </div>
+              <div class="modal-body">
+                <p class="mb-2">Are you still here?</p>
+                <p class="small text-secondary mb-0">Press <strong>I'm Here</strong> within <span id="heartbeatCountdown">60</span> seconds, otherwise your session will be terminated automatically.</p>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="heartbeatConfirmBtn">I'm Here</button>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modalEl);
+        return modalEl;
+      }
+
+      function submitAutoTerminate() {
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.style.display = "none";
+
+        const actionInput = document.createElement("input");
+        actionInput.type = "hidden";
+        actionInput.name = "session_action";
+        actionInput.value = "heartbeat_timeout";
+        form.appendChild(actionInput);
+
+        const resInput = document.createElement("input");
+        resInput.type = "hidden";
+        resInput.name = "res_id";
+        resInput.value = String(hbCfg.resID);
+        form.appendChild(resInput);
+
+        document.body.appendChild(form);
+        form.submit();
+      }
+
+      function startCountdown(modal) {
+        const countdownEl = document.getElementById("heartbeatCountdown");
+        responseRemainingMs = RESPONSE_WINDOW_MS;
+        if (countdownEl) countdownEl.textContent = String(Math.floor(responseRemainingMs / 1000));
+        setTextForAll(".js-heartbeat-response", formatMmSs(responseRemainingMs));
+
+        if (responseTimer) clearInterval(responseTimer);
+        responseTimer = setInterval(() => {
+          responseRemainingMs -= 1000;
+          if (countdownEl) countdownEl.textContent = String(Math.max(0, Math.floor(responseRemainingMs / 1000)));
+          setTextForAll(".js-heartbeat-response", formatMmSs(responseRemainingMs));
+          if (responseRemainingMs <= 0) {
+            clearInterval(responseTimer);
+            responseTimer = null;
+            setTextForAll(".js-heartbeat-response", "00:00");
+            try {
+              modal.hide();
+            } catch (e) {}
+            submitAutoTerminate();
+          }
+        }, 1000);
+      }
+
+      function startNextCheckLoop() {
+        nextCheckRemainingMs = CHECK_INTERVAL_MS;
+        setTextForAll(".js-heartbeat-next", formatMmSs(nextCheckRemainingMs));
+        if (nextCheckTimer) clearInterval(nextCheckTimer);
+        nextCheckTimer = setInterval(() => {
+          nextCheckRemainingMs -= 1000;
+          setTextForAll(".js-heartbeat-next", formatMmSs(nextCheckRemainingMs));
+          if (nextCheckRemainingMs <= 0) {
+            openPresenceCheck();
+            nextCheckRemainingMs = CHECK_INTERVAL_MS;
+            setTextForAll(".js-heartbeat-next", formatMmSs(nextCheckRemainingMs));
+          }
+        }, 1000);
+      }
+
+      function openPresenceCheck() {
+        const modalEl = ensureHeartbeatModal();
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        const confirmBtn = modalEl.querySelector("#heartbeatConfirmBtn");
+        if (confirmBtn) {
+          confirmBtn.onclick = function() {
+            if (responseTimer) {
+              clearInterval(responseTimer);
+              responseTimer = null;
+            }
+            responseRemainingMs = 0;
+            setTextForAll(".js-heartbeat-response", "--:--");
+            modal.hide();
+            nextCheckRemainingMs = CHECK_INTERVAL_MS;
+            setTextForAll(".js-heartbeat-next", formatMmSs(nextCheckRemainingMs));
+          };
+        }
+        modal.show();
+        startCountdown(modal);
+      }
+
+      setTextForAll(".js-heartbeat-response", "--:--");
+      startNextCheckLoop();
+    })();
+  </script>
+  <script>
     const bookingForm = document.getElementById("bookingForm");
     const bookingDate = document.getElementById("bookingDate");
     const bookingStartTime = document.getElementById("bookingStartTime");
     const bookingEndTime = document.getElementById("bookingEndTime");
     const confirmBookingBtn = document.getElementById("confirmBookingBtn");
     const bookingModal = document.getElementById("bookingModal");
-    const hourlyBookingRate = 15;
+    const hourlyBookingRate = <?php echo json_encode((float)$hourlyBookingRate); ?>;
+    const safetyFee = 10;
     const defaultConfirmLabel = "Confirm Booking";
     const priceLabel = document.getElementById("priceLabel");
+    const safetyRequirementBox = document.getElementById("safetyRequirementBox");
+    const safetyRequirementReason = document.getElementById("safetyRequirementReason");
+    const safetyConfirmCheckbox = document.getElementById("safetyConfirmCheckbox");
+    const bookingAgreementCheckbox = document.getElementById("bookingAgreementCheckbox");
+    const equipmentSelect = bookingForm.querySelector('select[name="eqID"]');
 
     function todayStr() {
       const n = new Date();
@@ -550,6 +847,18 @@ if ($activeSession) {
           alert("Start time cannot be in the past.");
         }
       }
+      if (bookingAgreementCheckbox && !bookingAgreementCheckbox.checked) {
+        e.preventDefault();
+        alert("You must agree to safety terms before booking.");
+        return;
+      }
+      const selectedOption = equipmentSelect ? equipmentSelect.options[equipmentSelect.selectedIndex] : null;
+      const needsSafety = selectedOption && selectedOption.dataset.safetyRequired === "1";
+      if (needsSafety && (!safetyConfirmCheckbox || !safetyConfirmCheckbox.checked)) {
+        e.preventDefault();
+        alert("This equipment requires mandatory safety confirmation.");
+        return;
+      }
     });
 
     function updateBookingPriceLabel() {
@@ -574,13 +883,38 @@ if ($activeSession) {
       }
 
       const bookedHours = Math.ceil(durationMinutes / 60);
-      const totalPrice = bookedHours * hourlyBookingRate;
+      const selectedOption = equipmentSelect ? equipmentSelect.options[equipmentSelect.selectedIndex] : null;
+      const needsSafety = selectedOption && selectedOption.dataset.safetyRequired === "1";
+      const totalPrice = (bookedHours * hourlyBookingRate) + (needsSafety ? safetyFee : 0);
       confirmBookingBtn.textContent = `${totalPrice}$ - ${defaultConfirmLabel}`;
       priceLabel.value = totalPrice;
     }
 
     bookingStartTime.addEventListener("input", updateBookingPriceLabel);
     bookingEndTime.addEventListener("input", updateBookingPriceLabel);
+    if (equipmentSelect) {
+      equipmentSelect.addEventListener("change", function() {
+        const selectedOption = equipmentSelect.options[equipmentSelect.selectedIndex];
+        const needsSafety = selectedOption && selectedOption.dataset.safetyRequired === "1";
+        if (needsSafety) {
+          safetyRequirementBox.classList.remove("d-none");
+          const reason = (selectedOption.dataset.safetyReason || "").trim();
+          safetyRequirementReason.textContent = reason !== "" ?
+            (`Reason: ${reason}`) :
+            "Reason: This equipment requires mandatory safety before use.";
+        } else {
+          safetyRequirementBox.classList.add("d-none");
+          if (safetyConfirmCheckbox) safetyConfirmCheckbox.checked = false;
+        }
+        updateBookingPriceLabel();
+      });
+    }
+    bookingModal.addEventListener("shown.bs.modal", function() {
+      if (equipmentSelect) {
+        equipmentSelect.dispatchEvent(new Event("change"));
+      }
+      if (bookingAgreementCheckbox) bookingAgreementCheckbox.checked = false;
+    });
   </script>
   <script>
     document.querySelectorAll('[data-open-booking-modal]').forEach((link) => {

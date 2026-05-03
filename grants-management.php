@@ -1,6 +1,9 @@
 <?php
 
+require_once __DIR__ . "/includes/require_admin.php";
 require_once "config/db.php";
+require_once __DIR__ . "/includes/audit.php";
+audit_init($conn);
 require_once "models/grant.php";
 
 $grant = new Grant($conn);

@@ -3,11 +3,16 @@
 require_once __DIR__ . "/includes/require_admin.php";
 
 require_once "config/db.php";
+require_once __DIR__ . "/includes/audit.php";
+audit_init($conn);
 require_once "models/reservation.php";
 
 $reservation = new Reservation($conn);
 
 if (isset($_GET["delete_id"]) && $_GET["delete_id"] !== "") {
+  audit_event($conn, "reservation.admin_delete", [
+    "reservationID" => (int)$_GET["delete_id"]
+  ]);
   $reservation->removeReservation($_GET["delete_id"]);
   header("Location: reservations-management.php");
   exit();
@@ -30,9 +35,20 @@ if (
 
   if ($reservationID !== "") {
     $grantForUpdate = $grantIDPost !== "" ? $grantIDPost : null;
+    audit_event($conn, "reservation.admin_update", [
+      "reservationID" => (int)$reservationID,
+      "userID" => (int)$userID,
+      "equipmentID" => (int)$equipmentID,
+      "status" => (string)$status
+    ]);
     $reservation->updateReservationFromAdmin($reservationID, $userID, $startTime, $endTime, $equipmentID, $status, $grantForUpdate);
   } else {
     $grantForInsert = $grantIDPost !== "" ? $grantIDPost : null;
+    audit_event($conn, "reservation.admin_create", [
+      "userID" => (int)$userID,
+      "equipmentID" => (int)$equipmentID,
+      "status" => (string)$status
+    ]);
     $ok = $reservation->addReservationFromAdmin($userID, $startTime, $endTime, $equipmentID, $status, $grantForInsert);
     if (!$ok) {
       $_SESSION["res_admin_error"] = "No valid grant found for this user. Add a grant in Grants Management first, or pick an existing Grant ID.";
@@ -45,6 +61,7 @@ if (
 
 $result = $reservation->getAll();
 $emergencyReports = $reservation->getEmergencyReports();
+$supportRequests = $reservation->getSessionSupportRequests();
 $users = [];
 $usersResult = $conn->query("SELECT userID, fname, lname, username FROM users ORDER BY userID ASC");
 if ($usersResult) {
@@ -184,9 +201,13 @@ unset($_SESSION["res_admin_error"]);
             <tbody>
               <?php if ($emergencyReports && $emergencyReports->num_rows > 0) { ?>
                 <?php while ($reportRow = $emergencyReports->fetch_assoc()) { ?>
+                  <?php
+                  $reportUserName = trim((string)($reportRow["fname"] ?? "") . " " . (string)($reportRow["lname"] ?? ""));
+                  if ($reportUserName === "") $reportUserName = (string)($reportRow["username"] ?? "Unknown User");
+                  ?>
                   <tr>
                     <td><?php echo htmlspecialchars($reportRow["reportID"]); ?></td>
-                    <td><?php echo htmlspecialchars($reportRow["userID"]); ?></td>
+                    <td><?php echo htmlspecialchars((string)$reportRow["userID"] . " - " . $reportUserName); ?></td>
                     <td><?php echo htmlspecialchars($reportRow["resID"]); ?></td>
                     <td><?php echo htmlspecialchars($reportRow["startTime"]); ?></td>
                     <td><?php echo htmlspecialchars($reportRow["endTime"]); ?></td>
@@ -197,6 +218,44 @@ unset($_SESSION["res_admin_error"]);
               <?php } else { ?>
                 <tr>
                   <td colspan="7" class="text-secondary">No emergency reports yet.</td>
+                </tr>
+              <?php } ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-wrapper mt-4">
+        <h2 class="h5 mb-3">Session Supervision Requests</h2>
+        <div class="table-responsive">
+          <table class="table table-striped align-middle">
+            <thead>
+              <tr>
+                <th>Request ID</th>
+                <th>User</th>
+                <th>Reservation ID</th>
+                <th>Description</th>
+                <th>Created At</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if ($supportRequests && $supportRequests->num_rows > 0) { ?>
+                <?php while ($supportRow = $supportRequests->fetch_assoc()) { ?>
+                  <?php
+                  $supportUserName = trim((string)($supportRow["fname"] ?? "") . " " . (string)($supportRow["lname"] ?? ""));
+                  if ($supportUserName === "") $supportUserName = (string)($supportRow["username"] ?? "Unknown User");
+                  ?>
+                  <tr>
+                    <td><?php echo htmlspecialchars($supportRow["requestID"]); ?></td>
+                    <td><?php echo htmlspecialchars((string)$supportRow["userID"] . " - " . $supportUserName); ?></td>
+                    <td><?php echo htmlspecialchars($supportRow["resID"]); ?></td>
+                    <td><?php echo htmlspecialchars($supportRow["message"]); ?></td>
+                    <td><?php echo htmlspecialchars($supportRow["createdAt"]); ?></td>
+                  </tr>
+                <?php } ?>
+              <?php } else { ?>
+                <tr>
+                  <td colspan="5" class="text-secondary">No supervision requests yet.</td>
                 </tr>
               <?php } ?>
             </tbody>

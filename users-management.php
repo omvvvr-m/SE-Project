@@ -1,6 +1,9 @@
 <?php
 
+require_once __DIR__ . "/includes/require_admin.php";
 require_once "config/db.php";
+require_once __DIR__ . "/includes/audit.php";
+audit_init($conn);
 require_once "models/user.php";
 
 $user = new User($conn);
@@ -8,6 +11,17 @@ $result = $user->getAll();
 
 $userMgmtError = $_SESSION["user_mgmt_error"] ?? null;
 unset($_SESSION["user_mgmt_error"]);
+
+function format_guest_countdown($seconds): string
+{
+  if ($seconds === null) return "-";
+  $seconds = (int)$seconds;
+  if ($seconds <= 0) return "Expired";
+  $hours = intdiv($seconds, 3600);
+  $minutes = intdiv($seconds % 3600, 60);
+  $secs = $seconds % 60;
+  return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
+}
 
 ?>
 
@@ -55,6 +69,7 @@ unset($_SESSION["user_mgmt_error"]);
                 <th>Phone</th>
                 <th>Password</th>
                 <th>Role</th>
+                <th>Guest Countdown</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -74,6 +89,15 @@ unset($_SESSION["user_mgmt_error"]);
                       <span class="badge text-bg-secondary">guest</span>
                     <?php } else { ?>
                       <span class="badge text-bg-primary">researcher</span>
+                    <?php } ?>
+                  </td>
+                  <td>
+                    <?php if (($row["role"] ?? "") === "guest") { ?>
+                      <span class="guest-countdown" data-seconds="<?php echo htmlspecialchars((string)($row["guest_remaining_seconds"] ?? "")); ?>">
+                        <?php echo htmlspecialchars(format_guest_countdown($row["guest_remaining_seconds"] ?? null)); ?>
+                      </span>
+                    <?php } else { ?>
+                      -
                     <?php } ?>
                   </td>
                   <td>
@@ -198,6 +222,32 @@ unset($_SESSION["user_mgmt_error"]);
         userIdInput.value = "";
       }
     });
+
+    function formatCountdown(sec) {
+      if (!Number.isFinite(sec)) return "-";
+      if (sec <= 0) return "Expired";
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+
+    const countdownEls = Array.from(document.querySelectorAll(".guest-countdown"))
+      .map((el) => ({
+        el,
+        sec: Number(el.dataset.seconds)
+      }));
+
+    function tickGuestCountdowns() {
+      countdownEls.forEach((item) => {
+        if (!Number.isFinite(item.sec)) return;
+        item.el.textContent = formatCountdown(item.sec);
+        item.sec -= 1;
+      });
+    }
+
+    tickGuestCountdowns();
+    setInterval(tickGuestCountdowns, 1000);
   </script>
 </body>
 

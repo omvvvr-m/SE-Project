@@ -1,11 +1,17 @@
 <?php
 
 require_once __DIR__ . "/../config/db.php";
+require_once __DIR__ . "/../includes/audit.php";
 $equipment = new Equipment($conn);
+audit_init($conn);
 
 
 if (isset($_GET['delete_id'])) {
-    $equipment->removeEquipment($_GET['delete_id']);
+    $deletedEqId = (int)$_GET['delete_id'];
+    audit_event($conn, "equipment.delete", [
+        "equipmentID" => $deletedEqId
+    ]);
+    $equipment->removeEquipment($deletedEqId);
     header("location: ../equipments-management.php");
     exit();
 }
@@ -23,8 +29,18 @@ if (
     $qual =  $_POST['eq_qual'];
     $stat =  $_POST['eq_stat'];
     if (isset($_POST['eq_id']) && !empty($_POST['eq_id'])) {
-        $equipment->updateEquipment($_POST['eq_id'], $qual, $name, $desc, $stat);
+        $editedEqId = (int)$_POST['eq_id'];
+        audit_event($conn, "equipment.update", [
+            "equipmentID" => $editedEqId,
+            "eqName" => (string)$name,
+            "status" => (string)$stat
+        ]);
+        $equipment->updateEquipment($editedEqId, $qual, $name, $desc, $stat);
     } else {
+        audit_event($conn, "equipment.create", [
+            "eqName" => (string)$name,
+            "status" => (string)$stat
+        ]);
         $equipment->addEquipment($qual, $name, $desc, $stat);
     }
     header("Location: " . dirname($_SERVER['PHP_SELF']) . "/equipments-management.php");
