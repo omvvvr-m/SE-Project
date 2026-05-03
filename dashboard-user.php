@@ -52,16 +52,37 @@ $reservResult = $reservation->getAllForUser();
 $activeSession = $reservation->getActiveSessionForUser((int)$currentUserId);
 $sessionEquipmentLabel = null;
 $sessionRemainingTime = null;
+$sessionEndTimestampMs = null;
+$serverNowTimestampMs = null;
+$sessionReservationId = null;
+
+/** @return DateTime|null */
+function parse_session_end_datetime($resDate, $endTime)
+{
+  $endTime = trim((string)$endTime);
+  if ($endTime === '') {
+    return null;
+  }
+  $end = null;
+  $resDate = trim((string)$resDate);
+  if ($resDate !== '') {
+    $end = DateTime::createFromFormat('Y-m-d H:i', $resDate . ' ' . $endTime)
+      ?: DateTime::createFromFormat('Y-m-d H:i:s', $resDate . ' ' . $endTime);
+  }
+  if (!$end && preg_match('/^\d{4}-\d{2}-\d{2}/', $endTime)) {
+    $end = DateTime::createFromFormat('Y-m-d H:i:s', $endTime)
+      ?: DateTime::createFromFormat('Y-m-d H:i', $endTime);
+  }
+  if (!$end) {
+    $end = DateTime::createFromFormat('Y-m-d H:i:s', date('Y-m-d') . ' ' . $endTime)
+      ?: DateTime::createFromFormat('Y-m-d H:i', date('Y-m-d') . ' ' . $endTime);
+  }
+  return $end ?: null;
+}
 
 function format_remaining_time($resDate, $endTime)
 {
-  $end = null;
-  if (!empty($resDate)) {
-    $end = DateTime::createFromFormat('Y-m-d H:i', $resDate . ' ' . $endTime);
-  }
-  if (!$end) {
-    $end = DateTime::createFromFormat('Y-m-d H:i:s', date('Y-m-d') . ' ' . $endTime);
-  }
+  $end = parse_session_end_datetime($resDate, $endTime);
   if (!$end) {
     return "00:00:00";
   }
@@ -75,8 +96,73 @@ function format_remaining_time($resDate, $endTime)
   $secs = $seconds % 60;
   return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
 }
-$sessionEquipmentLabel = $activeSession ? ($activeSession['eqName'] ?? ('Equipment #' . ($activeSession['eqID'] ?? '-'))) : null;
-$sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['resDate'] ?? '', $activeSession['endTime']) : null;
+
+/** Remaining session bounds using MySQL time (UNIX_TIMESTAMP / NOW). */
+function format_hms_from_seconds($seconds)
+{
+  $seconds = max(0, (int) $seconds);
+  $hours = intdiv($seconds, 3600);
+  $minutes = intdiv($seconds % 3600, 60);
+  $secs = $seconds % 60;
+  return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
+}
+
+/**
+ * @return array{now_ts: int, end_ts: int|null}
+ */
+function session_sql_now_and_end_ts(mysqli $conn, array $activeSession)
+{
+  $nowRes = $conn->query("SELECT UNIX_TIMESTAMP(NOW()) AS ts");
+  $nowTs = 0;
+  if ($nowRes && $row = $nowRes->fetch_assoc()) {
+    $nowTs = (int) $row['ts'];
+  }
+
+  $endTs = null;
+  $resDate = trim((string) ($activeSession['resDate'] ?? ''));
+  $endTime = trim((string) ($activeSession['endTime'] ?? ''));
+
+  if ($endTime !== '') {
+    $er = null;
+    if ($resDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $resDate)) {
+      $d = $conn->real_escape_string($resDate);
+      $t = $conn->real_escape_string($endTime);
+      $er = $conn->query("SELECT UNIX_TIMESTAMP(CONCAT('$d', ' ', '$t')) AS ts");
+    } elseif (preg_match('/^\d{4}-\d{2}-\d{2}/', $endTime)) {
+      $t = $conn->real_escape_string($endTime);
+      $er = $conn->query("SELECT UNIX_TIMESTAMP('$t') AS ts");
+    } else {
+      $t = $conn->real_escape_string($endTime);
+      $er = $conn->query("SELECT UNIX_TIMESTAMP(CONCAT(CURDATE(), ' ', '$t')) AS ts");
+    }
+    if ($er) {
+      $row = $er->fetch_assoc();
+      if (is_array($row) && isset($row['ts']) && is_numeric($row['ts'])) {
+        $endTs = (int) $row['ts'];
+      }
+    }
+  }
+
+  return ['now_ts' => $nowTs, 'end_ts' => $endTs];
+}
+
+$sessionEquipmentLabel = $activeSession ? ($activeSession['eqName'] ?? ('Equipment #' . ($activeSession['eqID'] ?? ($activeSession['equipmentID'] ?? '-')))) : null;
+
+if ($activeSession) {
+  $sessionReservationId = $activeSession['resID'] ?? $activeSession['bookingID'] ?? null;
+  $sqlTimes = session_sql_now_and_end_ts($conn, $activeSession);
+  $serverNowTimestampMs = $sqlTimes['now_ts'] * 1000;
+  if ($sqlTimes['end_ts'] !== null) {
+    $sessionEndTimestampMs = $sqlTimes['end_ts'] * 1000;
+    $sessionRemainingTime = format_hms_from_seconds($sqlTimes['end_ts'] - $sqlTimes['now_ts']);
+  } else {
+    $sessionRemainingTime = format_remaining_time($activeSession['resDate'] ?? '', $activeSession['endTime']);
+    $endDt = parse_session_end_datetime($activeSession['resDate'] ?? '', $activeSession['endTime']);
+    if ($endDt) {
+      $sessionEndTimestampMs = (int) round($endDt->getTimestamp() * 1000);
+    }
+  }
+}
 ?>
 
 <!doctype html>
@@ -212,14 +298,14 @@ $sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['r
                 <h2 class="panel-title">Session Panel</h2>
                 <?php if ($activeSession) { ?>
                   <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-                  <p class="mb-1"><span class="muted-label">Remaining Time:</span> <?php echo htmlspecialchars($sessionRemainingTime); ?></p>
+                  <p class="mb-1"><span class="muted-label">Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
                   <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
                   <p class="mb-3"><span class="muted-label">End Time:</span> <?php echo htmlspecialchars($activeSession['endTime']); ?></p>
 
                   <div class="d-flex gap-2 mb-3">
                     <form method="POST" class="m-0">
                       <input type="hidden" name="session_action" value="terminate" />
-                      <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                      <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
                       <button type="submit" class="btn btn-outline-danger btn-sm">Terminate</button>
                     </form>
                     <button class="btn btn-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#emergencyBox" aria-expanded="false" aria-controls="emergencyBox">
@@ -230,7 +316,7 @@ $sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['r
                   <div class="collapse" id="emergencyBox">
                     <form method="POST">
                       <input type="hidden" name="session_action" value="emergency" />
-                      <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                      <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
                       <input type="hidden" name="start_time" value="<?php echo htmlspecialchars($activeSession['startTime']); ?>" />
                       <input type="hidden" name="end_time" value="<?php echo htmlspecialchars($activeSession['endTime']); ?>" />
                       <label for="emergency_message" class="form-label mb-1">Describe the issue</label>
@@ -243,7 +329,6 @@ $sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['r
                 <?php } ?>
               </div>
             </div>
-
             <div id="grants-panel" class="col-12 col-xl-6">
               <div class="card-soft p-3 h-100">
                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -317,14 +402,14 @@ $sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['r
         <div class="modal-body">
           <?php if ($activeSession) { ?>
             <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-            <p class="mb-1"><span class="muted-label">Remaining Time:</span> <?php echo htmlspecialchars($sessionRemainingTime); ?></p>
+            <p class="mb-1"><span class="muted-label">Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
             <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
             <p class="mb-3"><span class="muted-label">End Time:</span> <?php echo htmlspecialchars($activeSession['endTime']); ?></p>
 
             <div class="d-flex gap-2 mb-3">
               <form method="POST" class="m-0">
                 <input type="hidden" name="session_action" value="terminate" />
-                <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
                 <button type="submit" class="btn btn-outline-danger btn-sm">Terminate</button>
               </form>
               <button class="btn btn-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#modalEmergencyBox" aria-expanded="false" aria-controls="modalEmergencyBox">
@@ -335,7 +420,7 @@ $sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['r
             <div class="collapse" id="modalEmergencyBox">
               <form method="POST">
                 <input type="hidden" name="session_action" value="emergency" />
-                <input type="hidden" name="res_id" value="<?php echo htmlspecialchars($activeSession['resID']); ?>" />
+                <input type="hidden" name="res_id" value="<?php echo htmlspecialchars((string)$sessionReservationId); ?>" />
                 <input type="hidden" name="start_time" value="<?php echo htmlspecialchars($activeSession['startTime']); ?>" />
                 <input type="hidden" name="end_time" value="<?php echo htmlspecialchars($activeSession['endTime']); ?>" />
                 <label for="modal_emergency_message" class="form-label mb-1">Describe the issue</label>
@@ -351,7 +436,52 @@ $sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['r
     </div>
   </div>
 
+  <script type="application/json" id="session-countdown-data"><?php echo json_encode(['endMs' => $sessionEndTimestampMs, 'serverNowMs' => $serverNowTimestampMs]); ?></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      const cfgEl = document.getElementById("session-countdown-data");
+      if (!cfgEl) return;
+      let cfg = {};
+      try {
+        cfg = JSON.parse(cfgEl.textContent || "{}");
+      } catch (e) {
+        return;
+      }
+      const endMs = cfg.endMs;
+      if (endMs == null || typeof endMs !== "number") return;
+
+      const clientAtLoad = Date.now();
+      const serverSkew =
+        cfg.serverNowMs != null && typeof cfg.serverNowMs === "number"
+          ? cfg.serverNowMs - clientAtLoad
+          : 0;
+
+      function formatRemaining(ms) {
+        if (ms <= 0) return "00:00:00";
+        const s = Math.floor(ms / 1000);
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+      }
+
+      function tick() {
+        const serverNow = Date.now() + serverSkew;
+        const rem = endMs - serverNow;
+        const text = formatRemaining(rem);
+        document.querySelectorAll(".js-session-remaining").forEach(function (el) {
+          el.textContent = text;
+        });
+        if (rem <= 0) {
+          clearInterval(timer);
+        }
+      }
+
+      tick();
+      const timer = setInterval(tick, 1000);
+    })();
+  </script>
   <script>
     const bookingForm = document.getElementById("bookingForm");
     const bookingDate = document.getElementById("bookingDate");
@@ -448,7 +578,10 @@ $sessionRemainingTime = $activeSession ? format_remaining_time($activeSession['r
 
         const bookingPanel = document.getElementById('booking-panel');
         if (bookingPanel) {
-          bookingPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          bookingPanel.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
         }
 
         const bookingModalEl = document.getElementById('bookingModal');
