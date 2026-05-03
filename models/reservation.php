@@ -467,6 +467,19 @@ class Reservation
         }
         return true;
     }
+
+    public function removeReservationForUser($reservationID, $userID)
+    {
+
+        $reservationID = (int)$reservationID;
+        $sql = "DELETE FROM reservation WHERE resID = $reservationID AND userID = $userID AND status != 'ongoing'";
+        $result = $this->conn->query($sql);
+        if (!$result) {
+            $this->errorMsg = "Could not delete reservation, Make sure it's not ongoing and try again";
+            return false;
+        }
+        return $this->conn->affected_rows > 0;
+    }
     private function columnExists($tableName, $columnName)
     {
         $safeTable = $this->conn->real_escape_string($tableName);
@@ -560,10 +573,6 @@ class Reservation
         return null;
     }
 
-    /**
-     * @param int|string|null $requestedGrantId from admin form (optional)
-     * @return int|null grant id or null if none valid
-     */
     private function resolveGrantIdForInsert($userID, $requestedGrantId)
     {
         if ($requestedGrantId !== null && $requestedGrantId !== '') {

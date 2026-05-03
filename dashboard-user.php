@@ -97,7 +97,6 @@ function format_remaining_time($resDate, $endTime)
   return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
 }
 
-/** Remaining session bounds using MySQL time (UNIX_TIMESTAMP / NOW). */
 function format_hms_from_seconds($seconds)
 {
   $seconds = max(0, (int) $seconds);
@@ -107,9 +106,7 @@ function format_hms_from_seconds($seconds)
   return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
 }
 
-/**
- * @return array{now_ts: int, end_ts: int|null}
- */
+
 function session_sql_now_and_end_ts(mysqli $conn, array $activeSession)
 {
   $nowRes = $conn->query("SELECT UNIX_TIMESTAMP(NOW()) AS ts");
@@ -260,28 +257,40 @@ if ($activeSession) {
                         <th>Start Time</th>
                         <th>End Time</th>
                         <th>Status</th>
+                        <th class="text-end">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <?php while ($row = $reservResult->fetch_assoc()) { ?>
+                      <?php while ($row = $reservResult->fetch_assoc()) {
+                        $bookingRowId = (int) ($row['resID'] ?? $row['bookingID'] ?? 0);
+                        $eqRowId = (int) ($row['eqID'] ?? $row['equipmentID'] ?? 0);
+                        $eqName = '—';
+                        if ($eqRowId > 0) {
+                          $eqRes = $conn->query('SELECT eqName FROM equipments WHERE eqID = ' . $eqRowId);
+                          if ($eqRes && $eqRow = $eqRes->fetch_assoc()) {
+                            $eqName = $eqRow['eqName'];
+                          }
+                        }
+                      ?>
                         <tr>
-                          <td><?php echo $row['resID']; ?></td>
-                          <td><?php
-                              $sql = "SELECT eqName FROM equipments where eqID = " .
-                                $row['eqID'];
-                              $res = $conn->query($sql);
-                              $resu = $res->fetch_assoc();
-                              echo $resu['eqName'];
-                              ?></td>
+                          <td><?php echo htmlspecialchars((string) $bookingRowId); ?></td>
+                          <td><?php echo htmlspecialchars($eqName); ?></td>
                           <td><?php echo htmlspecialchars($row['resDate'] ?? date('Y-m-d', strtotime($row['startTime']))); ?></td>
-                          <td><?php echo $row['startTime']; ?></td>
-                          <td><?php echo $row['endTime']; ?></td>
+                          <td><?php echo htmlspecialchars((string) $row['startTime']); ?></td>
+                          <td><?php echo htmlspecialchars((string) $row['endTime']); ?></td>
                           <td> <?php if ($row['status'] == 'ongoing') { ?>
                               <span class="badge text-bg-success">ongoing</span>
                             <?php } else if ($row['status'] == 'terminated') { ?>
                               <span class="badge text-bg-secondary">terminated</span>
                             <?php } else { ?>
                               <span class="badge text-bg-primary">ready</span>
+                            <?php } ?>
+                          </td>
+                          <td class="text-end">
+                            <?php if ($row['status'] === 'ongoing') { ?>
+                              <span class="small text-secondary" title="Terminate the session in the Session Panel first">—</span>
+                            <?php } elseif ($bookingRowId > 0) { ?>
+                              <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirm('Delete this reservation?');">Delete</button>
                             <?php } ?>
                           </td>
 
@@ -436,10 +445,12 @@ if ($activeSession) {
     </div>
   </div>
 
-  <script type="application/json" id="session-countdown-data"><?php echo json_encode(['endMs' => $sessionEndTimestampMs, 'serverNowMs' => $serverNowTimestampMs]); ?></script>
+  <script type="application/json" id="session-countdown-data">
+    <?php echo json_encode(['endMs' => $sessionEndTimestampMs, 'serverNowMs' => $serverNowTimestampMs]); ?>
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    (function () {
+    (function() {
       const cfgEl = document.getElementById("session-countdown-data");
       if (!cfgEl) return;
       let cfg = {};
@@ -453,9 +464,9 @@ if ($activeSession) {
 
       const clientAtLoad = Date.now();
       const serverSkew =
-        cfg.serverNowMs != null && typeof cfg.serverNowMs === "number"
-          ? cfg.serverNowMs - clientAtLoad
-          : 0;
+        cfg.serverNowMs != null && typeof cfg.serverNowMs === "number" ?
+        cfg.serverNowMs - clientAtLoad :
+        0;
 
       function formatRemaining(ms) {
         if (ms <= 0) return "00:00:00";
@@ -470,7 +481,7 @@ if ($activeSession) {
         const serverNow = Date.now() + serverSkew;
         const rem = endMs - serverNow;
         const text = formatRemaining(rem);
-        document.querySelectorAll(".js-session-remaining").forEach(function (el) {
+        document.querySelectorAll(".js-session-remaining").forEach(function(el) {
           el.textContent = text;
         });
         if (rem <= 0) {
