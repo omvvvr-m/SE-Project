@@ -27,10 +27,19 @@ if ($res->num_rows > 0) {
         "role" => (string)($user["role"] ?? ""),
         "username" => (string)($user["username"] ?? "")
     ]);
-    $grantGrapperSql = "SELECT * FROM grants where userID = " . $_SESSION["user_id"];
-    $grantRow = $conn->query($grantGrapperSql)->fetch_assoc();
-    if ($grantRow && isset($grantRow['grantid'])) {
-        $_SESSION['grant_id'] = $grantRow['grantid'];
+    $uid = (int)$_SESSION["user_id"];
+    $grantSql = "SELECT grantID FROM grants
+                 WHERE userID = $uid AND status = 'active'
+                 ORDER BY grantID ASC
+                 LIMIT 1";
+    $grantRes = $conn->query($grantSql);
+    if ($grantRes && ($grantRow = $grantRes->fetch_assoc())) {
+        $gid = $grantRow["grantID"] ?? $grantRow["grantid"] ?? null;
+        if ($gid !== null) {
+            $_SESSION["grant_id"] = (int)$gid;
+        }
+    } else {
+        unset($_SESSION["grant_id"]);
     }
     echo json_encode([
 

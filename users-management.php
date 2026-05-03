@@ -132,7 +132,7 @@ function format_guest_countdown($seconds): string
           <h2 class="modal-title fs-5">Add / Edit User</h2>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
-        <form method="POST" id="userForm">
+        <form method="POST" id="userForm" action="models/user.php">
           <div class="modal-body">
             <div class="row g-3">
               <input type="hidden" name="user_id" id="user_id" />

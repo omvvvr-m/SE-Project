@@ -15,7 +15,7 @@ $grants = [];
 $errorMessage = "";
 
 if ($userID > 0) {
-    $sql = "SELECT grantID, userID, balance, expiryDate, name
+    $sql = "SELECT grantID, userID, balance, expiryDate, name, status
             FROM grants
             WHERE userID = ?
             ORDER BY expiryDate ASC, grantID DESC";
@@ -80,16 +80,26 @@ if ($userID > 0) {
                   <th>Name</th>
                   <th>Balance</th>
                   <th>Expiry Date</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                <?php foreach ($grants as $grant) { ?>
+                <?php foreach ($grants as $grant) {
+                  $gStat = strtolower((string)($grant["status"] ?? "active"));
+                ?>
                   <tr>
                     <td><?php echo htmlspecialchars((string)$grant["grantID"]); ?></td>
                     <td><?php echo htmlspecialchars((string)$grant["userID"]); ?></td>
                     <td><?php echo htmlspecialchars((string)$grant["name"]); ?></td>
                     <td>$<?php echo number_format((float)$grant["balance"], 2); ?></td>
                     <td><?php echo htmlspecialchars((string)$grant["expiryDate"]); ?></td>
+                    <td>
+                      <?php if ($gStat === "expired") { ?>
+                        <span class="badge text-bg-secondary">expired</span>
+                      <?php } else { ?>
+                        <span class="badge text-bg-success">active</span>
+                      <?php } ?>
+                    </td>
                   </tr>
                 <?php } ?>
               </tbody>

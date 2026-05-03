@@ -26,10 +26,11 @@ $conn->query("CREATE TABLE IF NOT EXISTS grants (
     balance decimal(10,2) NOT NULL DEFAULT 0.00,
     expiryDate date NOT NULL,
     name varchar(100) NOT NULL,
+    status ENUM('active','expired') NOT NULL DEFAULT 'active',
     PRIMARY KEY (grantID)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-$sql = "SELECT grantID, userID, balance, expiryDate, name
+$sql = "SELECT grantID, userID, balance, expiryDate, name, status
         FROM grants
         WHERE userID = ?
         ORDER BY expiryDate ASC, grantID DESC";
@@ -61,7 +62,8 @@ while ($row = $res->fetch_assoc()) {
         "userID" => $row["userID"] ?? $userID,
         "name" => $row["name"] ?? "",
         "balance" => $row["balance"] ?? 0,
-        "expiryDate" => $row["expiryDate"] ?? ""
+        "expiryDate" => $row["expiryDate"] ?? "",
+        "status" => $row["status"] ?? "active"
     ];
 }
 

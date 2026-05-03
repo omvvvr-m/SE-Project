@@ -330,6 +330,10 @@ function loadMyGrantsForCurrentUser() {
         const grantName = grant.name || "-";
         const balance = Number(grant.balance || 0).toFixed(2);
         const expiry = grant.expiryDate || "-";
+        const st = String(grant.status || "active").toLowerCase();
+        const statusHtml = st === "expired"
+          ? '<span class="badge text-bg-secondary">expired</span>'
+          : '<span class="badge text-bg-success">active</span>';
         return (
           "<tr>"
           + "<td>" + String(grantID) + "</td>"
@@ -337,6 +341,7 @@ function loadMyGrantsForCurrentUser() {
           + "<td>" + String(grantName) + "</td>"
           + "<td>$" + String(balance) + "</td>"
           + "<td>" + String(expiry) + "</td>"
+          + "<td>" + statusHtml + "</td>"
           + "</tr>"
         );
       }).join("");
@@ -344,7 +349,7 @@ function loadMyGrantsForCurrentUser() {
       grantsContainer.innerHTML =
         '<div class="table-responsive">'
         + '<table class="table table-striped mb-0">'
-        + '<thead><tr><th>Grant ID</th><th>User ID</th><th>Name</th><th>Balance</th><th>Expiry Date</th></tr></thead>'
+        + '<thead><tr><th>Grant ID</th><th>User ID</th><th>Name</th><th>Balance</th><th>Expiry Date</th><th>Status</th></tr></thead>'
         + '<tbody>' + rowsHtml + '</tbody>'
         + '</table>'
         + '</div>';

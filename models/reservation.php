@@ -167,7 +167,7 @@ class Reservation
         $grantVals = '';
 
         if ($grantCol !== null) {
-            $gid = $this->resolveGrantIdForInsert((int)$userID, $grantID);
+            $gid = $this->resolveGrantIdForInsert((int)$userID, $grantID, true);
             if ($gid === null) {
                 return false;
             }
@@ -542,7 +542,7 @@ class Reservation
         $grantColBooking = $this->getReservationGrantColumn();
         $resolvedGrantId = null;
         if ($grantColBooking !== null) {
-            $resolvedGrantId = $this->resolveGrantIdForInsert($userID, $grantID);
+            $resolvedGrantId = $this->resolveGrantIdForInsert($userID, $grantID, false);
             if ($resolvedGrantId === null) {
                 $this->errorMsg = "No valid grant for this account. Ask admin to assign a grant.";
                 return false;
@@ -675,32 +675,42 @@ class Reservation
         return null;
     }
 
-    private function grantBelongsToUser($grantID, $userID)
+    private function grantBelongsToUser($grantID, $userID, $requireActive = false)
     {
         $grantID = (int)$grantID;
         $userID = (int)$userID;
-        $res = $this->conn->query("SELECT grantID FROM grants WHERE grantID = $grantID AND userID = $userID LIMIT 1");
+        $activeSql = $requireActive ? " AND status = 'active'" : "";
+        $res = $this->conn->query(
+            "SELECT grantID FROM grants WHERE grantID = $grantID AND userID = $userID$activeSql LIMIT 1"
+        );
         return $res && $res->num_rows > 0;
     }
 
-    private function firstGrantIdForUser($userID)
+    private function firstGrantIdForUser($userID, $activeOnly = true)
     {
         $userID = (int)$userID;
-        $res = $this->conn->query("SELECT grantID FROM grants WHERE userID = $userID ORDER BY grantID ASC LIMIT 1");
+        $activeSql = $activeOnly ? " AND status = 'active'" : "";
+        $res = $this->conn->query(
+            "SELECT grantID FROM grants WHERE userID = $userID$activeSql ORDER BY grantID ASC LIMIT 1"
+        );
         if ($res && $row = $res->fetch_assoc()) {
             return (int)$row['grantID'];
         }
         return null;
     }
 
-    private function resolveGrantIdForInsert($userID, $requestedGrantId)
+    /**
+     * @param bool $allowExpiredGrants Admin flows may reference any grant; user booking uses active only.
+     */
+    private function resolveGrantIdForInsert($userID, $requestedGrantId, $allowExpiredGrants = false)
     {
+        $requireActive = !$allowExpiredGrants;
         if ($requestedGrantId !== null && $requestedGrantId !== '') {
             $gid = (int)$requestedGrantId;
-            if ($this->grantBelongsToUser($gid, $userID)) {
+            if ($this->grantBelongsToUser($gid, $userID, $requireActive)) {
                 return $gid;
             }
         }
-        return $this->firstGrantIdForUser($userID);
+        return $this->firstGrantIdForUser($userID, $requireActive);
     }
 }

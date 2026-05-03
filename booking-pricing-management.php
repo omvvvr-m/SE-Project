@@ -8,6 +8,23 @@ audit_init($conn);
 $msg = null;
 $error = null;
 
+function pricing_target_user_is_admin(mysqli $conn, int $userID): bool
+{
+    if ($userID <= 0) {
+        return false;
+    }
+    $stmt = $conn->prepare("SELECT role FROM users WHERE userID = ? LIMIT 1");
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param("i", $userID);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    return $row && (string)($row["role"] ?? "") === "admin";
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $action = (string)($_POST["pricing_action"] ?? "global");
     if ($action === "user_override") {
@@ -15,6 +32,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $newUserRateRaw = trim((string)($_POST["target_hourly_rate"] ?? ""));
         if ($targetUserID <= 0) {
             $error = "Please choose a valid user.";
+        } elseif (pricing_target_user_is_admin($conn, $targetUserID)) {
+            $error = "Administrator accounts cannot have custom booking rates.";
         } elseif ($newUserRateRaw === "" || !is_numeric($newUserRateRaw)) {
             $error = "Please enter a valid user rate.";
         } else {
@@ -55,7 +74,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 }
 
 $users = [];
-$usersRes = $conn->query("SELECT userID, fname, lname, username, role FROM users ORDER BY userID ASC");
+$usersRes = $conn->query(
+    "SELECT userID, fname, lname, username, role FROM users WHERE role <> 'admin' ORDER BY userID ASC"
+);
 if ($usersRes) {
     while ($u = $usersRes->fetch_assoc()) {
         $users[] = $u;

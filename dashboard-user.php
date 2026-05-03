@@ -113,6 +113,20 @@ $sessionRemainingTime = null;
 $sessionEndTimestampMs = null;
 $serverNowTimestampMs = null;
 $sessionReservationId = null;
+$currentUserRole = "researcher";
+$guestExpiresAt = null;
+$guestExpiresMs = null;
+$userMetaRes = $conn->query("SELECT role, guest_expires_at FROM users WHERE userID = " . (int)$currentUserId . " LIMIT 1");
+if ($userMetaRes && $meta = $userMetaRes->fetch_assoc()) {
+  $currentUserRole = (string)($meta["role"] ?? "researcher");
+  $guestExpiresAt = $meta["guest_expires_at"] ?? null;
+  if ($currentUserRole === "guest" && !empty($guestExpiresAt)) {
+    $ts = strtotime((string)$guestExpiresAt);
+    if ($ts !== false) {
+      $guestExpiresMs = (int)$ts * 1000;
+    }
+  }
+}
 
 /** @return DateTime|null */
 function parse_session_end_datetime($resDate, $endTime)
@@ -266,6 +280,9 @@ if ($activeSession) {
           <div class="topbar p-3 mb-3 d-flex justify-content-between align-items-center">
             <div>
               <h1 class="h4 mb-1">Researcher Dashboard</h1>
+              <?php if ($currentUserRole === "guest") { ?>
+                <small class="text-warning fw-semibold d-block">Guest Countdown: <span class="js-guest-countdown">--:--:--</span></small>
+              <?php } ?>
               <small id="welcomeText" class="text-secondary">Welcome back, <span class="fullName"></span></small>
             </div>
             <a href="#" class="btn btn-outline-primary btn-outline-soft btn-sm" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">Open Session Panel</a>
@@ -594,6 +611,9 @@ if ($activeSession) {
   <script type="application/json" id="session-heartbeat-data">
     <?php echo json_encode(['active' => (bool)$activeSession, 'resID' => $sessionReservationId]); ?>
   </script>
+  <script type="application/json" id="guest-expiry-data">
+    <?php echo json_encode(['role' => $currentUserRole, 'expiresMs' => $guestExpiresMs]); ?>
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     (function() {
@@ -637,6 +657,39 @@ if ($activeSession) {
 
       tick();
       const timer = setInterval(tick, 1000);
+    })();
+  </script>
+  <script>
+    (function() {
+      const gEl = document.getElementById("guest-expiry-data");
+      if (!gEl) return;
+      let cfg = {};
+      try {
+        cfg = JSON.parse(gEl.textContent || "{}");
+      } catch (e) {
+        return;
+      }
+      if (cfg.role !== "guest") return;
+      const expiresMs = typeof cfg.expiresMs === "number" ? cfg.expiresMs : null;
+      if (expiresMs == null) return;
+
+      function formatHms(ms) {
+        if (ms <= 0) return "Expired";
+        const total = Math.floor(ms / 1000);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+      }
+
+      function tick() {
+        const rem = expiresMs - Date.now();
+        document.querySelectorAll(".js-guest-countdown").forEach((node) => {
+          node.textContent = formatHms(rem);
+        });
+      }
+      tick();
+      setInterval(tick, 1000);
     })();
   </script>
   <script>

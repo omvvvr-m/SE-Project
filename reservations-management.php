@@ -79,13 +79,23 @@ if ($usersResult) {
 
 $grantsList = [];
 $grantsQuery = $conn->query(
-  "SELECT g.grantID, g.userID, g.balance, g.name
+  "SELECT g.grantID, g.userID, g.balance, g.name, g.status
    FROM grants g
    ORDER BY g.userID ASC, g.grantID ASC"
 );
 if ($grantsQuery) {
   while ($gRow = $grantsQuery->fetch_assoc()) {
     $grantsList[] = $gRow;
+  }
+}
+
+$equipmentsList = [];
+$equipmentsQuery = $conn->query(
+  "SELECT eqID, eqName FROM equipments ORDER BY eqID ASC"
+);
+if ($equipmentsQuery) {
+  while ($eqRow = $equipmentsQuery->fetch_assoc()) {
+    $equipmentsList[] = $eqRow;
   }
 }
 
@@ -297,7 +307,18 @@ unset($_SESSION["res_admin_error"]);
                 <input type="datetime-local" name="end_time" id="end_time" class="form-control" required />
               </div>
               <div class="col-12">
-                <input name="equipment_id" id="equipment_id" class="form-control" placeholder="Equipment ID" required />
+                <label for="equipment_id" class="form-label mb-1">Equipment</label>
+                <select name="equipment_id" id="equipment_id" class="form-select" required>
+                  <option value="" disabled selected>Select Equipment</option>
+                  <?php foreach ($equipmentsList as $eqOption) {
+                    $eqId = $eqOption["eqID"] ?? "";
+                    $eqLabel = $eqId . " — " . ($eqOption["eqName"] ?? "");
+                  ?>
+                    <option value="<?php echo htmlspecialchars((string)$eqId); ?>">
+                      <?php echo htmlspecialchars($eqLabel); ?>
+                    </option>
+                  <?php } ?>
+                </select>
               </div>
               <div class="col-12">
                 <label for="grant_id" class="form-label mb-1">Grant</label>
@@ -305,7 +326,8 @@ unset($_SESSION["res_admin_error"]);
                   <option value="">Auto (first grant for user)</option>
                   <?php foreach ($grantsList as $g) {
                     $gid = $g["grantID"];
-                    $label = $gid . " — User " . $g["userID"] . " — " . ($g["name"] ?? "") . " ($" . $g["balance"] . ")";
+                    $st = strtolower((string)($g["status"] ?? "active"));
+                    $label = $gid . " — User " . $g["userID"] . " — " . ($g["name"] ?? "") . " ($" . $g["balance"] . ") — " . $st;
                   ?>
                     <option value="<?php echo htmlspecialchars((string)$gid); ?>"><?php echo htmlspecialchars($label); ?></option>
                   <?php } ?>

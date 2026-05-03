@@ -8,6 +8,7 @@ require_once "models/grant.php";
 
 $grant = new Grant($conn);
 $result = $grant->getAll();
+$minExpiryDate = date("Y-m-d");
 $usersResult = $conn->query("SELECT userID, fname, lname FROM users ORDER BY userID ASC");
 $users = [];
 if ($usersResult) {
@@ -67,6 +68,7 @@ if ($usersResult) {
                 <th>User ID</th>
                 <th>Balance</th>
                 <th>Expiry Date</th>
+                <th>Status</th>
                 <th>Name</th>
                 <th>Actions</th>
               </tr>
@@ -79,12 +81,20 @@ if ($usersResult) {
                 $balance = $row["balance"] ?? 0;
                 $expiryDate = $row["expiryDate"] ?? "";
                 $grantName = $row["name"] ?? "";
+                $grantStatus = strtolower((string)($row["status"] ?? "active"));
                 ?>
                 <tr>
                   <td><?php echo htmlspecialchars((string)$grantID); ?></td>
                   <td><?php echo htmlspecialchars((string)$userID); ?></td>
                   <td>$<?php echo number_format((float)$balance, 2); ?></td>
                   <td><?php echo htmlspecialchars((string)$expiryDate); ?></td>
+                  <td>
+                    <?php if ($grantStatus === "expired") { ?>
+                      <span class="badge text-bg-secondary">expired</span>
+                    <?php } else { ?>
+                      <span class="badge text-bg-success">active</span>
+                    <?php } ?>
+                  </td>
                   <td><?php echo htmlspecialchars((string)$grantName); ?></td>
                   <td>
                     <button
@@ -144,7 +154,14 @@ if ($usersResult) {
               </div>
               <div class="col-12">
                 <label for="expiry_date" class="form-label mb-1">Expiry Date</label>
-                <input type="date" name="expiry_date" id="expiry_date" class="form-control" required />
+                <input
+                  type="date"
+                  name="expiry_date"
+                  id="expiry_date"
+                  class="form-control"
+                  min="<?php echo htmlspecialchars($minExpiryDate); ?>"
+                  required />
+                <div class="form-text">Must be today or a future date.</div>
               </div>
               <div class="col-12">
                 <label for="grant_name" class="form-label mb-1">Grant Name</label>
@@ -173,10 +190,13 @@ if ($usersResult) {
     const balanceInput = document.getElementById("balance");
     const expiryDateInput = document.getElementById("expiry_date");
     const grantNameInput = document.getElementById("grant_name");
+    const minExpiry = "<?php echo htmlspecialchars($minExpiryDate); ?>";
 
     grantModal.addEventListener("show.bs.modal", function(event) {
       const triggerButton = event.relatedTarget;
       const isEdit = triggerButton && triggerButton.classList.contains("edit-grant-btn");
+
+      expiryDateInput.min = minExpiry;
 
       if (isEdit) {
         modalTitle.textContent = "Edit Grant";
@@ -191,6 +211,7 @@ if ($usersResult) {
         submitBtn.textContent = "Save Grant";
         grantForm.reset();
         grantIDInput.value = "";
+        expiryDateInput.min = minExpiry;
       }
     });
   </script>

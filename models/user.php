@@ -6,8 +6,17 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . "/../config/db.php";
 require_once __DIR__ . "/../includes/audit.php";
-// Enforce admin access only when this file is requested directly.
-$isDirectRequest = isset($_SERVER["SCRIPT_FILENAME"]) && realpath((string)$_SERVER["SCRIPT_FILENAME"]) === __FILE__;
+// Enforce admin access only when this file is requested directly (path compare works on Windows too).
+$scriptFile = (string)($_SERVER["SCRIPT_FILENAME"] ?? ($_SERVER["SCRIPT_NAME"] ?? ""));
+$rpScript = $scriptFile !== "" ? realpath($scriptFile) : false;
+$rpSelf = realpath(__FILE__);
+$isDirectRequest = $rpScript !== false && $rpSelf !== false && strcasecmp($rpScript, $rpSelf) === 0;
+if (!$isDirectRequest && $scriptFile !== "" && __FILE__ !== "") {
+    $norm = static function (string $p): string {
+        return strtolower(str_replace("\\", "/", $p));
+    };
+    $isDirectRequest = $norm($scriptFile) === $norm(__FILE__);
+}
 if ($isDirectRequest) {
     require_once __DIR__ . "/../includes/require_admin.php";
 }
@@ -216,12 +225,14 @@ class User
             $sql = "UPDATE grants
                     SET balance = balance - $safeAmount
                     WHERE grantID = $targetGrantID
-                      AND userID = $userID";
+                      AND userID = $userID
+                      AND status = 'active'";
         } else {
             $sql = "UPDATE grants g
                     JOIN (
                         SELECT grantID FROM grants
                         WHERE userID = $userID
+                          AND status = 'active'
                         ORDER BY grantID ASC
                         LIMIT 1
                     ) pick ON pick.grantID = g.grantID
@@ -243,10 +254,12 @@ class User
             $gid = (int)$grantID;
             $res = $this->conn->query("SELECT balance FROM grants
                                        WHERE grantID = $gid AND userID = $userID
+                                         AND status = 'active'
                                        LIMIT 1");
         } else {
             $res = $this->conn->query("SELECT balance FROM grants
                                        WHERE userID = $userID
+                                         AND status = 'active'
                                        ORDER BY grantID ASC
                                        LIMIT 1");
         }

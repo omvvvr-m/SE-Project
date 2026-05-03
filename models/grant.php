@@ -33,6 +33,11 @@ if (
         exit();
     }
 
+    if (!$grantModel->isExpiryOnOrAfterToday($expiryDate)) {
+        header("Location: grants-management.php?error=" . urlencode("Expiry date cannot be in the past. Choose today or a future date."));
+        exit();
+    }
+
     if (!$grantModel->userExists($userID)) {
         header("Location: grants-management.php?error=" . urlencode("User ID does not exist in users table."));
         exit();
@@ -82,7 +87,8 @@ class Grant
                 userID AS userID,
                 balance AS balance,
                 expiryDate AS expiryDate,
-                name AS name
+                name AS name,
+                status AS status
                 FROM grants
                 ORDER BY grantID DESC";
         return $this->conn->query($sql);
@@ -91,8 +97,8 @@ class Grant
     public function addGrant($userID, $balance, $expiryDate, $grantName)
     {
         $newGrantID = $this->getNextGrantID();
-        $sql = "INSERT INTO grants (grantID, userID, balance, expiryDate, name)
-                VALUES ('$newGrantID', '$userID', '$balance', '$expiryDate', '$grantName')";
+        $sql = "INSERT INTO grants (grantID, userID, balance, expiryDate, name, status)
+                VALUES ('$newGrantID', '$userID', '$balance', '$expiryDate', '$grantName', 'active')";
         return $this->conn->query($sql);
     }
 
@@ -108,7 +114,8 @@ class Grant
                 userID = '$userID',
                 balance = '$balance',
                 expiryDate = '$expiryDate',
-                name = '$grantName'
+                name = '$grantName',
+                status = IF(expiryDate < CURDATE(), 'expired', 'active')
                 WHERE grantID = '$grantID'";
         return $this->conn->query($sql);
     }
@@ -124,6 +131,17 @@ class Grant
     {
         $check = DateTime::createFromFormat("Y-m-d", $date);
         return $check && $check->format("Y-m-d") === $date;
+    }
+
+    /** Expiry must be today or later (server local date). */
+    public function isExpiryOnOrAfterToday($date)
+    {
+        if (!$this->isValidDate($date)) {
+            return false;
+        }
+        $today = new DateTimeImmutable("today");
+        $expiry = DateTimeImmutable::createFromFormat("Y-m-d", $date);
+        return $expiry instanceof DateTimeImmutable && $expiry >= $today;
     }
 
     private function getNextGrantID()
