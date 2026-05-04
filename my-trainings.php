@@ -8,7 +8,6 @@ if (!isset($_SESSION["user_id"])) {
 }
 require_once __DIR__ . "/config/db.php";
 require_once __DIR__ . "/includes/training.php";
-training_ensure_tables($conn);
 
 $userID = (int)$_SESSION["user_id"];
 $rows = [];

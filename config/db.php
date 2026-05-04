@@ -6,7 +6,6 @@ if ($conn->connect_error) {
 }
 
 require_once __DIR__ . "/../includes/grant_status_sync.php";
-vl_sync_grant_status_schema($conn);
 vl_sync_grant_expiry_statuses($conn);
 
 // Auto-clean expired guest accounts (24h lifetime).

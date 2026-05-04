@@ -41,13 +41,6 @@ function booking_validation_error($resDate, $startTime, $endTime)
 
 
 
-// What to do????
-// Well, just deduct the balance from the grant and create the reservation
-// Then, update the reservation status to ongoing when the user starts the session
-// And check whether the user has grant or not
-
-
-
 
 $reservation = new Reservation($conn);
 $user = new User($conn);
@@ -59,7 +52,6 @@ if (
     isset($_POST['startTime']) &&
     isset($_POST['endTime'])
 ) {
-    // $conn comes from models/user.php -> config/db.php include chain
     audit_init($conn);
     $userID = $_SESSION['user_id'];
     $grantID = $_SESSION["grant_id"] ?? null;
@@ -129,7 +121,6 @@ function reservation_minutes_from_time(string $time): int
     return ($h * 60) + $m;
 }
 
-//reamining is setting the grandid 
 
 
 class Reservation
@@ -337,7 +328,6 @@ class Reservation
         $eqColumn = $this->getEquipmentColumn();
         $hasResDate = $this->columnExists('reservation', 'resDate');
 
-        // ✅ Get correct time from MySQL (fix DST issue)
         $timeResult = $this->conn->query("SELECT NOW() as now");
         if (!$timeResult) {
             return null;
@@ -346,9 +336,6 @@ class Reservation
         $nowSql = $timeRow['now'];
         $now = new DateTime($nowSql);
 
-        // =========================
-        // 1. CHECK ONGOING
-        // =========================
         $sql = "SELECT r.*, e.eqName
             FROM reservation r
             LEFT JOIN equipments e ON e.eqID = r.$eqColumn
@@ -380,9 +367,6 @@ class Reservation
             }
         }
 
-        // =========================
-        // 2. FIND READY → ACTIVATE
-        // =========================
         if ($hasResDate) {
             $readySql = "SELECT r.*, e.eqName
                      FROM reservation r
@@ -416,7 +400,6 @@ class Reservation
             return null;
         }
 
-        // Activate it
         $rid = (int)$readyRow[$idColumn];
         $this->conn->query("UPDATE reservation SET status = 'ongoing' WHERE $idColumn = $rid");
 
@@ -435,17 +418,6 @@ class Reservation
     }
     public function createEmergencyReport($resID, $userID, $message, $startTime, $endTime)
     {
-        $this->conn->query("CREATE TABLE IF NOT EXISTS emergency_reports (
-            reportID INT NOT NULL AUTO_INCREMENT,
-            resID INT NOT NULL,
-            userID INT NOT NULL,
-            startTime TIME NOT NULL,
-            endTime TIME NOT NULL,
-            message TEXT NOT NULL,
-            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (reportID)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
-
         $resID = (int)$resID;
         $userID = (int)$userID;
         $safeStart = $this->conn->real_escape_string($startTime);
@@ -458,15 +430,6 @@ class Reservation
     }
     public function createSessionSupportRequest($resID, $userID, $message)
     {
-        $this->conn->query("CREATE TABLE IF NOT EXISTS session_support_requests (
-            requestID INT NOT NULL AUTO_INCREMENT,
-            resID INT NOT NULL,
-            userID INT NOT NULL,
-            message TEXT NOT NULL,
-            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (requestID)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
-
         $resID = (int)$resID;
         $userID = (int)$userID;
         $safeMessage = $this->conn->real_escape_string($message);
@@ -477,16 +440,6 @@ class Reservation
     }
     public function getEmergencyReports()
     {
-        $this->conn->query("CREATE TABLE IF NOT EXISTS emergency_reports (
-            reportID INT NOT NULL AUTO_INCREMENT,
-            resID INT NOT NULL,
-            userID INT NOT NULL,
-            startTime TIME NOT NULL,
-            endTime TIME NOT NULL,
-            message TEXT NOT NULL,
-            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (reportID)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
         return $this->conn->query(
             "SELECT er.reportID, er.userID, er.resID, er.startTime, er.endTime, er.message, er.createdAt,
                     u.fname, u.lname, u.username
@@ -497,14 +450,6 @@ class Reservation
     }
     public function getSessionSupportRequests()
     {
-        $this->conn->query("CREATE TABLE IF NOT EXISTS session_support_requests (
-            requestID INT NOT NULL AUTO_INCREMENT,
-            resID INT NOT NULL,
-            userID INT NOT NULL,
-            message TEXT NOT NULL,
-            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (requestID)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
         return $this->conn->query(
             "SELECT sr.requestID, sr.userID, sr.resID, sr.message, sr.createdAt,
                     u.fname, u.lname, u.username

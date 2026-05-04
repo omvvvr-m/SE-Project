@@ -146,7 +146,6 @@ class Grant
 
     private function getNextGrantID()
     {
-        // $this->ensureTableExists();
         $sql = "SELECT MAX(grantID) AS maxID FROM grants";
         $result = $this->conn->query($sql);
 
@@ -157,17 +156,4 @@ class Grant
         return 1;
     }
 
-    /* private function ensureTableExists()
-    {
-        $sql = "CREATE TABLE IF NOT EXISTS grants (
-                grantID int(11) NOT NULL,
-                userID int(11) NOT NULL,
-                balance decimal(10,2) NOT NULL DEFAULT 0.00,
-                expiryDate date NOT NULL,
-                name varchar(100) NOT NULL,
-                PRIMARY KEY (grantID)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
-
-        $this->conn->query($sql);
-    } */
 }

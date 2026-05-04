@@ -20,16 +20,6 @@ if ($userID <= 0) {
     exit();
 }
 
-$conn->query("CREATE TABLE IF NOT EXISTS grants (
-    grantID int(11) NOT NULL,
-    userID int(11) NOT NULL,
-    balance decimal(10,2) NOT NULL DEFAULT 0.00,
-    expiryDate date NOT NULL,
-    name varchar(100) NOT NULL,
-    status ENUM('active','expired') NOT NULL DEFAULT 'active',
-    PRIMARY KEY (grantID)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
-
 $sql = "SELECT grantID, userID, balance, expiryDate, name, status
         FROM grants
         WHERE userID = ?

@@ -39,13 +39,6 @@ function booking_validation_error($resDate, $startTime, $endTime)
 
 
 
-// What to do????
-// Well, just deduct the balance from the grant and create the reservation
-// Then, update the reservation status to ongoing when the user starts the session
-// And check whether the user has grant or not
-
-
-
 
 $reservation = new Reservation($conn);
 $user = new User($conn);
@@ -79,7 +72,7 @@ if (
     exit();
 }
 
-//reamining is setting the grandid 
+
 
 
 class Reservation
@@ -292,9 +285,6 @@ class Reservation
         $nowSql = $timeRow['now'];
         $now = new DateTime($nowSql);
 
-        // =========================
-        // 1. CHECK ONGOING
-        // =========================
         $sql = "SELECT r.*, e.eqName
                 FROM reservation r
                 LEFT JOIN equipments e ON e.eqID = r.$eqColumn
@@ -327,9 +317,6 @@ class Reservation
             }
         }
 
-        // =========================
-        // 2. FIND READY → ACTIVATE
-        // =========================
         if ($hasResDate) {
             $readySql = "SELECT r.*, e.eqName
                          FROM reservation r
@@ -364,7 +351,6 @@ class Reservation
             return null;
         }
 
-        // Activate it
         $rid = (int)$readyRow[$idColumn];
         $this->conn->query("UPDATE reservation SET status = 'ongoing' WHERE $idColumn = $rid");
 
@@ -383,17 +369,6 @@ class Reservation
     }
     public function createEmergencyReport($resID, $userID, $message, $startTime, $endTime)
     {
-        $this->conn->query("CREATE TABLE IF NOT EXISTS emergency_reports (
-            reportID INT NOT NULL AUTO_INCREMENT,
-            resID INT NOT NULL,
-            userID INT NOT NULL,
-            startTime TIME NOT NULL,
-            endTime TIME NOT NULL,
-            message TEXT NOT NULL,
-            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (reportID)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
-
         $resID = (int)$resID;
         $userID = (int)$userID;
         $safeStart = $this->conn->real_escape_string($startTime);
@@ -406,16 +381,6 @@ class Reservation
     }
     public function getEmergencyReports()
     {
-        $this->conn->query("CREATE TABLE IF NOT EXISTS emergency_reports (
-            reportID INT NOT NULL AUTO_INCREMENT,
-            resID INT NOT NULL,
-            userID INT NOT NULL,
-            startTime TIME NOT NULL,
-            endTime TIME NOT NULL,
-            message TEXT NOT NULL,
-            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (reportID)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
         return $this->conn->query("SELECT * FROM emergency_reports ORDER BY reportID DESC");
     }
     public function createBooking($userID, $eqID, $grantID, $resDate, $startTime, $endTime, $price)

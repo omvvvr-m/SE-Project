@@ -5,7 +5,6 @@ require_once __DIR__ . "/includes/audit.php";
 require_once __DIR__ . "/includes/safety.php";
 
 audit_init($conn);
-safety_ensure_table($conn);
 
 $msg = null;
 $error = null;

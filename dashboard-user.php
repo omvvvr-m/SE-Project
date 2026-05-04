@@ -24,10 +24,8 @@ $reservation = new Reservation($conn);
 $equipment = new Equipment($conn);
 $hourlyBookingRate = booking_get_effective_hourly_rate($conn, (int)$currentUserId);
 $reservation->normalizeStatusesForUser((int)$currentUserId);
-training_ensure_tables($conn);
 $requiredTrainingMap = training_get_required_map($conn);
 $passedTrainingMap = training_get_user_passed_map($conn, (int)$currentUserId);
-safety_ensure_table($conn);
 $safetyMap = safety_get_map($conn);
 
 $sessionActionMsg = $_SESSION['session_action_msg'] ?? null;
@@ -322,7 +320,7 @@ if ($activeSession) {
                   <h2 class="panel-title mb-0">Booking Panel</h2>
                   <div class="small text-secondary me-2">Hourly Rate: $<?php echo htmlspecialchars(number_format((float)$hourlyBookingRate, 2)); ?></div>
                   <button class="btn btn-gradient btn-sm px-3" data-bs-toggle="modal"
-                    data-bs-target="#bookingModal">Book Equipment</button>
+                    data-bs-target="#bookingModal">New Booking</button>
                 </div>
                 <div class="table-responsive">
                   <table class="table table-striped mb-0">
@@ -456,7 +454,7 @@ if ($activeSession) {
       <form id="bookingForm" method="POST">
         <div class="modal-content">
           <div class="modal-header">
-            <h2 class="modal-title fs-5">Book Equipment</h2>
+            <h2 class="modal-title fs-5">New Booking</h2>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
@@ -502,10 +500,6 @@ if ($activeSession) {
               <div class="col-6">
                 <label class="form-label">Booking Date</label>
                 <input name="resDate" type="date" class="form-control" id="bookingDate" required />
-              </div>
-              <div class="col-6">
-                <label class="form-label">Required Qualification</label>
-                <input name="qual" type="text" class="form-control" placeholder="Microscopy Certificate" />
               </div>
               <div class="col-6">
                 <label class="form-label">Start Time</label>

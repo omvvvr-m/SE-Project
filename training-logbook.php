@@ -5,7 +5,6 @@ require_once __DIR__ . "/includes/audit.php";
 require_once __DIR__ . "/includes/training.php";
 
 audit_init($conn);
-training_ensure_tables($conn);
 
 $msg = null;
 $error = null;
