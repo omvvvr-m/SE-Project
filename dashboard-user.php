@@ -1,235 +1,5 @@
 <?php
-
-session_start();
-
-if (!isset($_SESSION["user_id"])) {
-  header("Location: login.html");
-  exit;
-}
-
-$currentUserId = $_SESSION["user_id"];
-
-$bookingError = $_SESSION['booking_error'] ?? null;
-unset($_SESSION['booking_error']);
-
-require_once "config/db.php";
-require_once __DIR__ . "/includes/audit.php";
-require_once __DIR__ . "/includes/booking_rate.php";
-require_once __DIR__ . "/includes/training.php";
-require_once __DIR__ . "/includes/safety.php";
-require_once "models/equipment.php";
-require_once "models/reservation.php";
-
-$reservation = new Reservation($conn);
-$equipment = new Equipment($conn);
-$hourlyBookingRate = booking_get_effective_hourly_rate($conn, (int)$currentUserId);
-$reservation->normalizeStatusesForUser((int)$currentUserId);
-$requiredTrainingMap = training_get_required_map($conn);
-$passedTrainingMap = training_get_user_passed_map($conn, (int)$currentUserId);
-$safetyMap = safety_get_map($conn);
-
-$sessionActionMsg = $_SESSION['session_action_msg'] ?? null;
-unset($_SESSION['session_action_msg']);
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['session_action'])) {
-  $action = $_POST['session_action'];
-  $resID = isset($_POST['res_id']) ? (int)$_POST['res_id'] : 0;
-
-  if ($action === 'terminate' && $resID > 0) {
-    audit_init($conn);
-    audit_event($conn, "session.terminate", [
-      "resID" => (int)$resID,
-      "userID" => (int)$currentUserId
-    ]);
-    $reservation->terminateSession($resID, (int)$currentUserId);
-    $_SESSION['session_action_msg'] = 'Session terminated successfully.';
-  } elseif ($action === 'emergency' && $resID > 0) {
-    $message = trim($_POST['emergency_message'] ?? '');
-    $startTime = $_POST['start_time'] ?? '';
-    $endTime = $_POST['end_time'] ?? '';
-    if ($message === '') {
-      $_SESSION['session_action_msg'] = 'Please write the emergency issue details.';
-    } else {
-      audit_init($conn);
-      audit_event($conn, "session.emergency_report", [
-        "resID" => (int)$resID,
-        "userID" => (int)$currentUserId,
-        "message" => mb_substr((string)$message, 0, 200)
-      ]);
-      $reservation->createEmergencyReport($resID, (int)$currentUserId, $message, $startTime, $endTime);
-      $reservation->terminateSession($resID, (int)$currentUserId);
-      $_SESSION['session_action_msg'] = 'Emergency report sent to admin and session terminated.';
-    }
-  } elseif ($action === 'need_help' && $resID > 0) {
-    $message = trim($_POST['help_message'] ?? '');
-    if ($message === '') {
-      $_SESSION['session_action_msg'] = 'Please write what help you need.';
-    } else {
-      audit_init($conn);
-      audit_event($conn, "session.supervision_request", [
-        "resID" => (int)$resID,
-        "userID" => (int)$currentUserId,
-        "message" => mb_substr((string)$message, 0, 200)
-      ]);
-      $reservation->createSessionSupportRequest($resID, (int)$currentUserId, $message);
-      $_SESSION['session_action_msg'] = 'Support request sent to admin successfully.';
-    }
-  } elseif ($action === 'heartbeat_timeout' && $resID > 0) {
-    audit_init($conn);
-    audit_event($conn, "session.auto_terminate_inactive", [
-      "resID" => (int)$resID,
-      "userID" => (int)$currentUserId
-    ]);
-    $reservation->terminateSession($resID, (int)$currentUserId);
-    $_SESSION['session_action_msg'] = 'Session terminated due to inactivity (no response to presence check).';
-  }
-
-  header("Location: dashboard-user.php#session-panel");
-  exit;
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['booking_action']) && $_POST['booking_action'] === 'delete') {
-  $bookingID = isset($_POST['booking_id']) ? (int)$_POST['booking_id'] : 0;
-  if ($bookingID > 0) {
-    if ($reservation->removeReservationForUser($bookingID, (int)$currentUserId)) {
-      $_SESSION['session_action_msg'] = 'Booking deleted successfully.';
-    } else {
-      $_SESSION['booking_error'] = $reservation->errorMsg ?: 'Could not delete booking.';
-    }
-  } else {
-    $_SESSION['booking_error'] = 'Invalid booking id.';
-  }
-  header("Location: dashboard-user.php#booking-panel");
-  exit;
-}
-
-$result = $equipment->getAll();
-$reservResult = $reservation->getAllForUser();
-$activeSession = $reservation->getActiveSessionForUser((int)$currentUserId);
-$sessionEquipmentLabel = null;
-$sessionRemainingTime = null;
-$sessionEndTimestampMs = null;
-$serverNowTimestampMs = null;
-$sessionReservationId = null;
-$currentUserRole = "researcher";
-$guestExpiresAt = null;
-$guestExpiresMs = null;
-$userMetaRes = $conn->query("SELECT role, guest_expires_at FROM users WHERE userID = " . (int)$currentUserId . " LIMIT 1");
-if ($userMetaRes && $meta = $userMetaRes->fetch_assoc()) {
-  $currentUserRole = (string)($meta["role"] ?? "researcher");
-  $guestExpiresAt = $meta["guest_expires_at"] ?? null;
-  if ($currentUserRole === "guest" && !empty($guestExpiresAt)) {
-    $ts = strtotime((string)$guestExpiresAt);
-    if ($ts !== false) {
-      $guestExpiresMs = (int)$ts * 1000;
-    }
-  }
-}
-
-/** @return DateTime|null */
-function parse_session_end_datetime($resDate, $endTime)
-{
-  $endTime = trim((string)$endTime);
-  if ($endTime === '') {
-    return null;
-  }
-  $end = null;
-  $resDate = trim((string)$resDate);
-  if ($resDate !== '') {
-    $end = DateTime::createFromFormat('Y-m-d H:i', $resDate . ' ' . $endTime)
-      ?: DateTime::createFromFormat('Y-m-d H:i:s', $resDate . ' ' . $endTime);
-  }
-  if (!$end && preg_match('/^\d{4}-\d{2}-\d{2}/', $endTime)) {
-    $end = DateTime::createFromFormat('Y-m-d H:i:s', $endTime)
-      ?: DateTime::createFromFormat('Y-m-d H:i', $endTime);
-  }
-  if (!$end) {
-    $end = DateTime::createFromFormat('Y-m-d H:i:s', date('Y-m-d') . ' ' . $endTime)
-      ?: DateTime::createFromFormat('Y-m-d H:i', date('Y-m-d') . ' ' . $endTime);
-  }
-  return $end ?: null;
-}
-
-function format_remaining_time($resDate, $endTime)
-{
-  $end = parse_session_end_datetime($resDate, $endTime);
-  if (!$end) {
-    return "00:00:00";
-  }
-  $now = new DateTime();
-  if ($now >= $end) {
-    return "00:00:00";
-  }
-  $seconds = $end->getTimestamp() - $now->getTimestamp();
-  $hours = floor($seconds / 3600);
-  $minutes = floor(($seconds % 3600) / 60);
-  $secs = $seconds % 60;
-  return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
-}
-
-function format_hms_from_seconds($seconds)
-{
-  $seconds = max(0, (int) $seconds);
-  $hours = intdiv($seconds, 3600);
-  $minutes = intdiv($seconds % 3600, 60);
-  $secs = $seconds % 60;
-  return sprintf("%02d:%02d:%02d", $hours, $minutes, $secs);
-}
-
-
-function session_sql_now_and_end_ts(mysqli $conn, array $activeSession)
-{
-  $nowRes = $conn->query("SELECT UNIX_TIMESTAMP(NOW()) AS ts");
-  $nowTs = 0;
-  if ($nowRes && $row = $nowRes->fetch_assoc()) {
-    $nowTs = (int) $row['ts'];
-  }
-
-  $endTs = null;
-  $resDate = trim((string) ($activeSession['resDate'] ?? ''));
-  $endTime = trim((string) ($activeSession['endTime'] ?? ''));
-
-  if ($endTime !== '') {
-    $er = null;
-    if ($resDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $resDate)) {
-      $d = $conn->real_escape_string($resDate);
-      $t = $conn->real_escape_string($endTime);
-      $er = $conn->query("SELECT UNIX_TIMESTAMP(CONCAT('$d', ' ', '$t')) AS ts");
-    } elseif (preg_match('/^\d{4}-\d{2}-\d{2}/', $endTime)) {
-      $t = $conn->real_escape_string($endTime);
-      $er = $conn->query("SELECT UNIX_TIMESTAMP('$t') AS ts");
-    } else {
-      $t = $conn->real_escape_string($endTime);
-      $er = $conn->query("SELECT UNIX_TIMESTAMP(CONCAT(CURDATE(), ' ', '$t')) AS ts");
-    }
-    if ($er) {
-      $row = $er->fetch_assoc();
-      if (is_array($row) && isset($row['ts']) && is_numeric($row['ts'])) {
-        $endTs = (int) $row['ts'];
-      }
-    }
-  }
-
-  return ['now_ts' => $nowTs, 'end_ts' => $endTs];
-}
-
-$sessionEquipmentLabel = $activeSession ? ($activeSession['eqName'] ?? ('Equipment #' . ($activeSession['eqID'] ?? ($activeSession['equipmentID'] ?? '-')))) : null;
-
-if ($activeSession) {
-  $sessionReservationId = $activeSession['resID'] ?? $activeSession['bookingID'] ?? null;
-  $sqlTimes = session_sql_now_and_end_ts($conn, $activeSession);
-  $serverNowTimestampMs = $sqlTimes['now_ts'] * 1000;
-  if ($sqlTimes['end_ts'] !== null) {
-    $sessionEndTimestampMs = $sqlTimes['end_ts'] * 1000;
-    $sessionRemainingTime = format_hms_from_seconds($sqlTimes['end_ts'] - $sqlTimes['now_ts']);
-  } else {
-    $sessionRemainingTime = format_remaining_time($activeSession['resDate'] ?? '', $activeSession['endTime']);
-    $endDt = parse_session_end_datetime($activeSession['resDate'] ?? '', $activeSession['endTime']);
-    if ($endDt) {
-      $sessionEndTimestampMs = (int) round($endDt->getTimestamp() * 1000);
-    }
-  }
-}
+require_once __DIR__ . "/controllers/dashboard_user_controller.php";
 ?>
 
 <!doctype html>
@@ -259,7 +29,7 @@ if ($activeSession) {
           <div class="sidebar p-3">
             <h2 class="h5 mb-4">User Panel</h2>
             <nav class="nav flex-column">
-              <a class="nav-link active" href="dashboard-user.php"><i class="bi bi-house me-2"></i>Dashboard</a>
+              <a class="nav-link active" href=" dashboard-user.php"><i class="bi bi-house me-2"></i>Dashboard</a>
               <a class="nav-link" href="profile.php?from=user&user_id=<?php echo urlencode((string)$currentUserId); ?>" data-profile-link><i class="bi bi-person me-2"></i>Profile</a>
               <a class="nav-link" href="#booking-panel" data-open-booking-modal><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
               <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#sessionInfoModal"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
@@ -385,8 +155,8 @@ if ($activeSession) {
               <div class="card-soft p-3 h-100">
                 <h2 class="panel-title">Session Panel</h2>
                 <?php if ($activeSession) { ?>
-                  <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-                  <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+                  <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars((string) ($sessionEquipmentLabel ?? '')); ?></p>
+                  <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars((string) ($sessionRemainingTime ?? '')); ?></span></p>
                   <p class="mb-1"><span class="muted-label">Keep Session Alive Check In:</span> <span class="js-heartbeat-next">02:00</span></p>
                   <p class="mb-1"><span class="muted-label">Response Countdown:</span> <span class="js-heartbeat-response">--:--</span></p>
                   <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
@@ -549,8 +319,8 @@ if ($activeSession) {
         </div>
         <div class="modal-body">
           <?php if ($activeSession) { ?>
-            <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-            <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+            <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars((string) ($sessionEquipmentLabel ?? '')); ?></p>
+            <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars((string) ($sessionRemainingTime ?? '')); ?></span></p>
             <p class="mb-1"><span class="muted-label">Keep Session Alive Check In:</span> <span class="js-heartbeat-next">02:00</span></p>
             <p class="mb-1"><span class="muted-label">Response Countdown:</span> <span class="js-heartbeat-response">--:--</span></p>
             <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
