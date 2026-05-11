@@ -27,6 +27,13 @@ if ($res->num_rows > 0) {
         "role" => (string)($user["role"] ?? ""),
         "username" => (string)($user["username"] ?? "")
     ]);
+    if (isset($user["role"]) && strtolower((string)$user["role"]) === "guest") {
+        $guestUid = (int)$user["userID"];
+        $conn->query(
+            "UPDATE users SET guest_created_at = NOW(), guest_expires_at = DATE_ADD(NOW(), INTERVAL 24 HOUR) " .
+            "WHERE userID = $guestUid AND role = 'guest'"
+        );
+    }
     $uid = (int)$_SESSION["user_id"];
     $grantSql = "SELECT grantID FROM grants
                  WHERE userID = $uid AND status = 'active'

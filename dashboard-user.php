@@ -112,16 +112,22 @@ $sessionEndTimestampMs = null;
 $serverNowTimestampMs = null;
 $sessionReservationId = null;
 $currentUserRole = "researcher";
-$guestExpiresAt = null;
-$guestExpiresMs = null;
-$userMetaRes = $conn->query("SELECT role, guest_expires_at FROM users WHERE userID = " . (int)$currentUserId . " LIMIT 1");
+$guestRemainingSeconds = null;
+$userMetaRes = $conn->query(
+  "SELECT role,
+          CASE
+            WHEN role = 'guest' AND guest_expires_at IS NOT NULL
+            THEN TIMESTAMPDIFF(SECOND, NOW(), guest_expires_at)
+            ELSE NULL
+          END AS guest_remaining_seconds
+   FROM users WHERE userID = " . (int)$currentUserId . " LIMIT 1"
+);
 if ($userMetaRes && $meta = $userMetaRes->fetch_assoc()) {
   $currentUserRole = (string)($meta["role"] ?? "researcher");
-  $guestExpiresAt = $meta["guest_expires_at"] ?? null;
-  if ($currentUserRole === "guest" && !empty($guestExpiresAt)) {
-    $ts = strtotime((string)$guestExpiresAt);
-    if ($ts !== false) {
-      $guestExpiresMs = (int)$ts * 1000;
+  if ($currentUserRole === "guest" && isset($meta["guest_remaining_seconds"]) && $meta["guest_remaining_seconds"] !== null) {
+    $guestRemainingSeconds = (int)$meta["guest_remaining_seconds"];
+    if ($guestRemainingSeconds > 86400) {
+      $guestRemainingSeconds = 86400;
     }
   }
 }
@@ -606,7 +612,10 @@ if ($activeSession) {
     <?php echo json_encode(['active' => (bool)$activeSession, 'resID' => $sessionReservationId]); ?>
   </script>
   <script type="application/json" id="guest-expiry-data">
-    <?php echo json_encode(['role' => $currentUserRole, 'expiresMs' => $guestExpiresMs]); ?>
+    <?php echo json_encode([
+      'role' => $currentUserRole,
+      'guestRemainingSeconds' => $guestRemainingSeconds
+    ]); ?>
   </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
@@ -664,26 +673,36 @@ if ($activeSession) {
         return;
       }
       if (cfg.role !== "guest") return;
-      const expiresMs = typeof cfg.expiresMs === "number" ? cfg.expiresMs : null;
-      if (expiresMs == null) return;
+      const startSec = cfg.guestRemainingSeconds;
+      if (startSec == null || typeof startSec !== "number" || !Number.isFinite(startSec)) return;
 
-      function formatHms(ms) {
-        if (ms <= 0) return "Expired";
-        const total = Math.floor(ms / 1000);
+      let sec = Math.floor(startSec);
+
+      function formatGuestSeconds(total) {
+        if (total <= 0) return "00:00:00";
         const h = Math.floor(total / 3600);
         const m = Math.floor((total % 3600) / 60);
         const s = total % 60;
         return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
       }
 
-      function tick() {
-        const rem = expiresMs - Date.now();
-        document.querySelectorAll(".js-guest-countdown").forEach((node) => {
-          node.textContent = formatHms(rem);
+      let guestTimer = null;
+      function tickGuest() {
+        const nodes = document.querySelectorAll(".js-guest-countdown");
+        if (sec <= 0) {
+          nodes.forEach((node) => {
+            node.textContent = "Expired";
+          });
+          if (guestTimer != null) clearInterval(guestTimer);
+          return;
+        }
+        nodes.forEach((node) => {
+          node.textContent = formatGuestSeconds(sec);
         });
+        sec -= 1;
       }
-      tick();
-      setInterval(tick, 1000);
+      tickGuest();
+      guestTimer = setInterval(tickGuest, 1000);
     })();
   </script>
   <script>
