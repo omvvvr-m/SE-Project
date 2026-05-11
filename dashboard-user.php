@@ -265,7 +265,7 @@ if ($activeSession) {
           <div class="sidebar p-3">
             <h2 class="h5 mb-4">User Panel</h2>
             <nav class="nav flex-column">
-              <a class="nav-link active" href="dashboard-user.php"><i class="bi bi-house me-2"></i>Dashboard</a>
+              <a class="nav-link active" href=" dashboard-user.php"><i class="bi bi-house me-2"></i>Dashboard</a>
               <a class="nav-link" href="profile.php?from=user&user_id=<?php echo urlencode((string)$currentUserId); ?>" data-profile-link><i class="bi bi-person me-2"></i>Profile</a>
               <a class="nav-link" href="#booking-panel" data-open-booking-modal><i class="bi bi-calendar2-check me-2"></i>Booking Panel</a>
               <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#sessionInfoModal"><i class="bi bi-stopwatch me-2"></i>Session Panel</a>
@@ -391,8 +391,8 @@ if ($activeSession) {
               <div class="card-soft p-3 h-100">
                 <h2 class="panel-title">Session Panel</h2>
                 <?php if ($activeSession) { ?>
-                  <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-                  <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+                  <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars((string) ($sessionEquipmentLabel ?? '')); ?></p>
+                  <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars((string) ($sessionRemainingTime ?? '')); ?></span></p>
                   <p class="mb-1"><span class="muted-label">Keep Session Alive Check In:</span> <span class="js-heartbeat-next">02:00</span></p>
                   <p class="mb-1"><span class="muted-label">Response Countdown:</span> <span class="js-heartbeat-response">--:--</span></p>
                   <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>
@@ -555,8 +555,8 @@ if ($activeSession) {
         </div>
         <div class="modal-body">
           <?php if ($activeSession) { ?>
-            <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars($sessionEquipmentLabel); ?></p>
-            <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars($sessionRemainingTime); ?></span></p>
+            <p class="mb-1"><span class="muted-label">Equipment:</span> <?php echo htmlspecialchars((string) ($sessionEquipmentLabel ?? '')); ?></p>
+            <p class="mb-1"><span class="muted-label">Session Remaining Time:</span> <span class="js-session-remaining"><?php echo htmlspecialchars((string) ($sessionRemainingTime ?? '')); ?></span></p>
             <p class="mb-1"><span class="muted-label">Keep Session Alive Check In:</span> <span class="js-heartbeat-next">02:00</span></p>
             <p class="mb-1"><span class="muted-label">Response Countdown:</span> <span class="js-heartbeat-response">--:--</span></p>
             <p class="mb-1"><span class="muted-label">Start Time:</span> <?php echo htmlspecialchars($activeSession['startTime']); ?></p>

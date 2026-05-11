@@ -155,5 +155,4 @@ class Grant
 
         return 1;
     }
-
 }
